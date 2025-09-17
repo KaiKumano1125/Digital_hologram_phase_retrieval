@@ -13,9 +13,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/highgui.hpp>
 
-// --- Helper Functions ---
-
-// Function to read a grayscale image and convert it to a normalized vector of doubles
+// read a grayscale image and convert it to a normalized vector of doubles
 std::vector<double> readImageToVector(const std::string& filename, int& width, int& height) {
     cv::Mat image = cv::imread(filename, cv::IMREAD_GRAYSCALE);
     if (image.empty()) {
@@ -77,7 +75,7 @@ void fftshift(std::vector<double>& data, int width, int height) {
     tmp.copyTo(q2);
 }
 
-// Function to generate a spherical reference wave
+// 球面波の生成//Function to generate a spherical reference wave
 std::vector<std::complex<double>> generateSphericalWave(int width, int height, double lambda, double z) {
     std::vector<std::complex<double>> wave(width * height);
     double k = 2 * M_PI / lambda;
@@ -96,7 +94,7 @@ std::vector<std::complex<double>> generateSphericalWave(int width, int height, d
     return wave;
 }
 
-// Function to perform Angular Spectrum Propagation using FFTW
+// 角スペクトル法//Function to perform Angular Spectrum Propagation using FFTW
 std::vector<std::complex<double>> angularSpectrumPropagation(const std::vector<std::complex<double>>& inputWave, int width, int height, double lambda, double z) {
     int N = width * height;
     std::vector<std::complex<double>> outputWave(N);
@@ -113,8 +111,8 @@ std::vector<std::complex<double>> angularSpectrumPropagation(const std::vector<s
     fftw_execute(p_forward);
 
     double k = 2 * M_PI / lambda;
-    double dx = 5.0e-6;
-    double dy = 5.0e-6;
+    double dx = 5.0e-7;
+    double dy = 5.0e-7;
 
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
@@ -150,12 +148,12 @@ std::vector<std::complex<double>> angularSpectrumPropagation(const std::vector<s
 }
 
 
-// --- Main Gabor Hologram Simulation ---
+//ガボールホログラムシミュレーション --- Main Gabor Hologram Simulation ---
 int main() {
     // Simulation parameters
     const double lambda = 500e-9; // Wavelength (green laser)
-    const double Z1 = 0.04;        // Distance from light source to object
-    const double Z2 = 0.2;         // Distance from object to hologram plane
+    const double Z1 = 0.13;        // Distance from light source to object
+    const double Z2 = 0.2;         // Distance from object to hologram plane (200mm fixed)
 
     std::string object_filename = "input/Object.bmp";
     int width, height;
