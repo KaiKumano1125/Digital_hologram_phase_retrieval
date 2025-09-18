@@ -33,6 +33,24 @@ std::vector<double> readImageToVector(const std::string& filename, int& width, i
     return imageVector;
 }
 
+//Fuction to perform zero-padding
+std::vector<double> padVectorWithZeros(const std::vector<double>& original, int originalWidth, int originalHeight, int& newWidth, int& newHeight) {
+    newWidth = originalWidth * 2;
+    newHeight = originalHeight * 2;
+    std::vector<double> paddedVector(newWidth * newHeight, 0.0);
+
+    int startX = originalWidth / 2;
+    int startY = originalHeight / 2;
+
+    for (int y = 0; y < originalHeight; ++y) {
+        for (int x = 0; x < originalWidth; ++x) {
+            paddedVector[(startY + y) * newWidth + (startX + x)] = original[y * originalWidth + x];
+        }
+    }
+
+    return paddedVector;
+}
+
 // Function to save a vector of normalized intensity values to a BMP file
 void saveIntensity(const std::vector<double>& intensity, int width, int height, const std::string& filename) {
     cv::Mat outputImage(height, width, CV_8UC1);
@@ -53,6 +71,22 @@ void saveIntensity(const std::vector<double>& intensity, int width, int height, 
     cv::imwrite(filename, outputImage);
     std::cout << "Image saved to " << filename << std::endl;
 }
+
+// Function to crop the central part of a vector back to original dimensions
+std::vector<double> cropVector(const std::vector<double>& paddedData, int paddedWidth, int paddedHeight, int originalWidth, int originalHeight) {
+    std::vector<double> croppedVector(originalWidth * originalHeight);
+    int startX = (paddedWidth - originalWidth) / 2;
+    int startY = (paddedHeight - originalHeight) / 2;
+
+    for (int y = 0; y < originalHeight; ++y) {
+        for (int x = 0; x < originalWidth; ++x) {
+            croppedVector[y * originalWidth + x] = paddedData[(startY + y) * paddedWidth + (startX + x)];
+        }
+    }
+
+    return croppedVector;
+}
+
 
 // Function to rearrange the quadrants of the FFT output for visualization
 void fftshift(std::vector<double>& data, int width, int height) {
@@ -111,8 +145,8 @@ std::vector<std::complex<double>> angularSpectrumPropagation(const std::vector<s
     fftw_execute(p_forward);
 
     double k = 2 * M_PI / lambda;
-    double dx = 5.0e-7;
-    double dy = 5.0e-7;
+    double dx = 5.0e-5; //pixel size
+    double dy = 5.0e-5; //pixel size
 
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
@@ -151,9 +185,9 @@ std::vector<std::complex<double>> angularSpectrumPropagation(const std::vector<s
 //ガボールホログラムシミュレーション --- Main Gabor Hologram Simulation ---
 int main() {
     // Simulation parameters
-    const double lambda = 500e-9; // Wavelength (green laser)
-    const double Z1 = 0.13;        // Distance from light source to object
-    const double Z2 = 0.2;         // Distance from object to hologram plane (200mm fixed)
+    const double lambda = 500e-9; // Wavelength (green laser: 500nm)
+    const double Z1 = 0.004;        // Distance from light source to object
+    const double Z2 = 0.02;         // Distance from object to hologram plane (200mm fixed)
 
     std::string object_filename = "input/Object.bmp";
     int width, height;
@@ -163,26 +197,32 @@ int main() {
         return 1;
     }
 
-    std::vector<std::complex<double>> object_wave(width * height);
-    for (int i = 0; i < width * height; ++i) {
-        object_wave[i] = object_data[i];
+    //ゼロパディングの実行 Apply zero-padding to the object data
+    int paddedWidth, paddedHeight;
+    std::vector<double> padded_object_data = padVectorWithZeros(object_data, width, height, paddedWidth, paddedHeight);
+    // Save the zero-padded object data to a BMP file for visualization
+    //saveIntensity(padded_object_data, paddedWidth, paddedHeight, "output/test.cpp/man/padded_object.bmp");
+
+    std::vector<std::complex<double>> object_wave(paddedWidth * paddedHeight);
+    for (int i = 0; i < paddedWidth * paddedHeight; ++i) {
+        object_wave[i] = padded_object_data[i];
     }
 
     // Generate and propagate the spherical reference wave
-    std::vector<std::complex<double>> spherical_wave = generateSphericalWave(width, height, lambda, Z1);
-    std::vector<std::complex<double>> reference_wave_at_hologram = angularSpectrumPropagation(spherical_wave, width, height, lambda, Z1 + Z2);
+    std::vector<std::complex<double>> spherical_wave = generateSphericalWave(paddedWidth, paddedHeight, lambda, Z1);
+    std::vector<std::complex<double>> reference_wave_at_hologram = angularSpectrumPropagation(spherical_wave, paddedWidth, paddedHeight, lambda, Z1 + Z2);
 
     // Propagate the object wave
-    std::vector<std::complex<double>> propagated_object_wave = angularSpectrumPropagation(object_wave, width, height, lambda, Z2);
+    std::vector<std::complex<double>> propagated_object_wave = angularSpectrumPropagation(object_wave, paddedWidth, paddedHeight, lambda, Z2);
 
     // Combine the waves to form the total wave field at the hologram plane
-    std::vector<std::complex<double>> total_wave(width * height);
-    for (int i = 0; i < width * height; ++i) {
+    std::vector<std::complex<double>> total_wave(paddedWidth * paddedHeight);
+    for (int i = 0; i < paddedWidth * paddedHeight; ++i) {
         total_wave[i] = reference_wave_at_hologram[i] + propagated_object_wave[i];
     }
 
     // --- Save the hologram's spectrum for visualization ---
-    int N = width * height;
+    int N = paddedWidth * paddedHeight;
     fftw_complex* in_total = reinterpret_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * N));
     fftw_complex* out_total = reinterpret_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * N));
 
@@ -191,7 +231,7 @@ int main() {
         in_total[i][1] = total_wave[i].imag();
     }
 
-    fftw_plan p_forward_total = fftw_plan_dft_2d(height, width, in_total, out_total, FFTW_FORWARD, FFTW_ESTIMATE);
+    fftw_plan p_forward_total = fftw_plan_dft_2d(paddedHeight, paddedWidth, in_total, out_total, FFTW_FORWARD, FFTW_ESTIMATE);
     fftw_execute(p_forward_total);
 
     std::vector<double> hologram_spectrum(N);
@@ -215,22 +255,25 @@ int main() {
         }
     }
 
-    fftshift(hologram_spectrum, width, height);
-    saveIntensity(hologram_spectrum, width, height, "output/hologram_spectrum.bmp");
+    fftshift(hologram_spectrum, paddedWidth, paddedHeight);
+    //saveIntensity(hologram_spectrum, paddedWidth, paddedHeight, "output/hologram_spectrum_padded.bmp");
 
     fftw_destroy_plan(p_forward_total);
     fftw_free(in_total);
     fftw_free(out_total);
 
     // --- Compute and save the hologram's intensity ---
-    std::vector<double> hologram_intensity(width * height);
-    for (int i = 0; i < width * height; ++i) {
+    std::vector<double> hologram_intensity(paddedWidth * paddedHeight);
+    for (int i = 0; i < paddedWidth * paddedHeight; ++i) {
         hologram_intensity[i] = std::norm(total_wave[i]);
     }
 
-    saveIntensity(hologram_intensity, width, height, "output/hologram_intensity.bmp");
+    //saveIntensity(hologram_intensity, paddedWidth, paddedHeight, "output/test.cpp/man/hologram_intensity_padded.bmp");
+    // Crop the intensity and save it
+    std::vector<double> cropped_hologram_intensity = cropVector(hologram_intensity, paddedWidth, paddedHeight, width, height);
+    saveIntensity(cropped_hologram_intensity, width, height, "output/test.cpp/object/10_hologram_intensity_z1=4mm_dx=5.0e-5.bmp");
 
-    // The reconstruction function is also included but commented out to focus on the hologram generation.
+    // The reconstruction function is also included but commented out to focus on the hologram generation.B
     // reconstructHologram(hologram_intensity, width, height, lambda, Z1, Z2, "output/reconstructed_image.bmp");
 
     fftw_cleanup();
