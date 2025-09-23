@@ -30,7 +30,6 @@ def generate_reference_wave(width, height, wavelength, z):
 
     r_sq = x**2 + y**2 + z**2
     r = np.sqrt(r_sq)
-
     wave = np.exp(1j * k * r) / r
     return wave
 
@@ -48,7 +47,7 @@ def create_fresnel_impulse_response(width, height, wavelength, z, dx, dy):
     
     return fftshift(h)
 
-def fresnel_convolution_propagation(input_wave, original_width, original_height, wavelength, z, dx, dy):
+def fresnel_convolution_propagation(input_wave, original_width, original_height, wavelength, z, dx, dy, band_limit=False):
     padded_width, padded_height = original_width * 2, original_height * 2
     padded_input_wave = np.zeros((padded_height, padded_width), dtype=np.complex128)
     start_y, start_x = original_height // 2, original_width // 2
@@ -61,6 +60,23 @@ def fresnel_convolution_propagation(input_wave, original_width, original_height,
     fft_input_wave = fft2(padded_input_wave)
     # F[h]
     fft_impulse_response = fft2(h)
+
+    # Apply band-limiting in the frequency domain
+    if band_limit:
+        # These are the limits from your C++ code, converted to Python
+        u_lim = 1 / (wavelength * np.sqrt((2 * dx * z)**2 + 1))
+        v_lim = 1 / (wavelength * np.sqrt((2 * dy * z)**2 + 1))
+        
+        fx = np.fft.fftfreq(padded_width, d=dx)
+        fy = np.fft.fftfreq(padded_height, d=dy)
+        fx, fy = np.meshgrid(fx, fy)
+        
+        filter_mask = np.ones_like(fft_impulse_response)
+        filter_mask[np.abs(fx) > u_lim] = 0.0
+        filter_mask[np.abs(fy) > v_lim] = 0.0
+        
+        fft_impulse_response *= filter_mask
+
     # 3. Multiply the results in the frequency domain
     propagated_spectrum = fft_input_wave * fft_impulse_response
     # 4. Perform the final inverse FFT
@@ -69,16 +85,18 @@ def fresnel_convolution_propagation(input_wave, original_width, original_height,
     cropped_wave = propagated_wave[start_y:start_y+original_height, start_x:start_x+original_width]
     return cropped_wave
 
+
 def main():
     # Simulation parameters
     wavelength = 500e-9  # 500 nm
     z1 = 0.133            # distance from light source to object
-    z2 = 0.4             # distance from object to hologram plane
+    z2 = 0.2             # distance from object to hologram plane
     dx = 5.0e-7          # pixel size
     dy = 5.0e-7
+    band_limit = True
 
     # Input file
-    object_filename = "input/Man.bmp"
+    object_filename = "input/Object.bmp"
 
     try:
         original_image = read_image(object_filename)
@@ -86,18 +104,23 @@ def main():
         print(e)
         return
     original_height, original_width = original_image.shape
+    
     # Create the initial object wave (as a complex array)
     object_wave = original_image.astype(np.complex128)
+    
     # Generate and propagate the spherical reference wave
     spherical_wave = generate_reference_wave(original_width, original_height, wavelength, z1)
-    reference_wave_at_hologram = fresnel_convolution_propagation(spherical_wave, original_width, original_height, wavelength, z1 + z2, dx, dy)
+    reference_wave_at_hologram = fresnel_convolution_propagation(spherical_wave, original_width, original_height, wavelength, z1 + z2, dx, dy, band_limit=band_limit)
+    
     # Propagate the object wave
-    propagated_object_wave = fresnel_convolution_propagation(object_wave, original_width, original_height, wavelength, z2, dx, dy)
+    propagated_object_wave = fresnel_convolution_propagation(object_wave, original_width, original_height, wavelength, z2, dx, dy, band_limit=band_limit)
+
     # Combine the waves to form the total wave field at the hologram plane
     total_wave = reference_wave_at_hologram + propagated_object_wave
+
     # Compute and save the hologram's intensity
     hologram_intensity = np.abs(total_wave)**2
-    output_filename = f"output_gabor/frenel_diffraction/without_bl/z2=0.2m/z1=0.133m/hologram_intensity_Z1={z1}_dx={dx}_Man_fr.png"
+    output_filename = f"output_gabor/frenel_diffraction/with_bl/z2=0.2m/z1=0.133m/hologram_intensity_Z1={z1}_dx={dx}_Object_fr.png"
     if not os.path.exists(os.path.dirname(output_filename)):
         os.makedirs(os.path.dirname(output_filename))
     save_intensity(hologram_intensity, output_filename)
