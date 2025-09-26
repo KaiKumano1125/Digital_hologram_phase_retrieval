@@ -12,12 +12,14 @@ from torch.utils.tensorboard import SummaryWriter
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"using device: {device}")
 
+
 def read_image(filename):
     img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
     if img is None:
         raise FileNotFoundError(f"Image file '{filename}' not found.")
     normalized_img = img.astype(np.float64) / 255.0
     return torch.tensor(normalized_img, dtype=torch.float64, device=device)
+
 
 def save_Intensity(intensity_tensor, filename):
     intensity_array = intensity_tensor.detach().cpu().numpy()
@@ -29,6 +31,7 @@ def save_Intensity(intensity_tensor, filename):
     output_img = normalized_intensity.astype(np.uint8)
     cv2.imwrite(filename, output_img)
     print(f"Image saved to {filename}")
+
 
 def create_fresnel_impulse_response(width, height, wavelength, z, dx, dy):
     k = 2 * np.pi / wavelength
@@ -43,6 +46,7 @@ def create_fresnel_impulse_response(width, height, wavelength, z, dx, dy):
     h = torch.exp(1j * phase)
     return fftshift(h)
 
+
 def fresnel_convolution_prop(input_wave, impulse_response_fft, crop_width, crop_height):
     padded_height, padded_width = input_wave.shape
     
@@ -53,10 +57,13 @@ def fresnel_convolution_prop(input_wave, impulse_response_fft, crop_width, crop_
 
     # Center crop
     start_y = padded_height // 2 - crop_height // 2
+    
     start_x = padded_width // 2 - crop_width // 2
+    
     cropped_wave = propagated_wave[start_y:start_y+crop_height, start_x:start_x+crop_width]
 
     return cropped_wave
+
 
 def generate_spherical_reference_wave_tensor(width, height, wavelength, z):
     k = 2 * np.pi / wavelength
@@ -73,6 +80,7 @@ def generate_spherical_reference_wave_tensor(width, height, wavelength, z):
 
     wave = torch.exp(1j * k * r) / r
     return wave.to(torch.complex128)
+
 
 def main():
     # Setup argument parser
@@ -102,7 +110,7 @@ def main():
     padded_height, padded_width = h * pad_factor, w * pad_factor
     
     # TensorBoard Setup
-    writer = SummaryWriter(log_dir=f'runs/fresnel_retrieval_Z1={z1}_dx={dx}_iteraitions=100000')
+    writer = SummaryWriter(log_dir=f'runs/fresnel_retrieval_iterations=500000_lr=1e-4_SGD')
     print(f"TensorBoard writer created at: {writer.log_dir}")
     
     # Pre-compute the FFT of the impulse response
@@ -121,9 +129,19 @@ def main():
     x, y = torch.meshgrid(x_coords, y_coords, indexing='ij')
     r_sq = x**2 + y**2
     known_phase = torch.exp(1j * k / (2 * z1) * r_sq).to(torch.complex128)
+    save_Intensity(torch.angle(known_phase), "known_phase.png")
+    s_plane_phase = torch.angle(known_phase)
+    # Normalize the phase for visualization
+    normalized_phase = (s_plane_phase + np.pi) / (2 * np.pi)
+    # Convert to a format that can be saved as an image
+    phase_array = normalized_phase.detach().cpu().numpy()
+    # Save the phase information as an image
+    output_filename = "s_plane_phase.png"
+    cv2.imwrite(output_filename, (phase_array * 255).astype(np.uint8))
+    print(f"Phase information of the s-plane saved to {output_filename}")
 
-    # Optimizer(Adam)
-    optimizer = torch.optim.Adam([s], lr=1e-4)
+    # Optimizer(SGD)
+    optimizer = torch.optim.SGD([s], lr=1e-4, momentum=0.9)
 
     num_iterations = 500000
     for i in range(num_iterations):
@@ -142,7 +160,18 @@ def main():
         reference_wave_at_hologram = fresnel_convolution_prop(spherical_wave, fft_impulse_response, w, h)
         
         total_wave = propagated_object_wave + reference_wave_at_hologram
+
+        # Compute phase at hologram
+        phase_at_hologram = torch.angle(total_wave)
+        phase_tensor = (phase_at_hologram / (2 * np.pi) + 0.5).unsqueeze(0).unsqueeze(0)
+        writer.add_image('Phase at Hologram Plane', phase_tensor, i)
+
         simulated_intensity = torch.abs(total_wave)**2
+
+        # Logging
+        sim_norm_for_logging = simulated_intensity / (simulated_intensity.max() + 1e-9)
+        sim_tensor_for_logging = sim_norm_for_logging.unsqueeze(0).unsqueeze(0)
+        writer.add_image('Simulated Hologram Intensity', sim_tensor_for_logging, i)
 
         # Loss (MSE)
         sim_norm = simulated_intensity / (simulated_intensity.max() + 1e-9)
