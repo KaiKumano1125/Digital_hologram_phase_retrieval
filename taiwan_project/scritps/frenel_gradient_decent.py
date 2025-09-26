@@ -57,9 +57,7 @@ def fresnel_convolution_prop(input_wave, impulse_response_fft, crop_width, crop_
 
     # Center crop
     start_y = padded_height // 2 - crop_height // 2
-    
     start_x = padded_width // 2 - crop_width // 2
-    
     cropped_wave = propagated_wave[start_y:start_y+crop_height, start_x:start_x+crop_width]
 
     return cropped_wave
@@ -86,7 +84,7 @@ def main():
     # Setup argument parser
     parser = argparse.ArgumentParser(description="Fresnel phase retrieval simulation using gradient descent.")
     parser.add_argument('--wavelength', type=float, default=500e-9, help='Wavelength in meters (e.g., 500e-9 for 500nm).')
-    parser.add_argument('--z1', type=float, default=0.04, help='Distance from light source to object in meters.')
+    parser.add_argument('--z1', type=float, default=0.5, help='Distance from light source to object in meters.')
     parser.add_argument('--z2', type=float, default=0.2, help='Distance from object to hologram plane in meters.')
     parser.add_argument('--dx', type=float, default=8.0e-6, help='Pixel size in x direction in meters.')
     parser.add_argument('--dy', type=float, default=8.0e-6, help='Pixel size in y direction in meters.')
@@ -110,7 +108,7 @@ def main():
     padded_height, padded_width = h * pad_factor, w * pad_factor
     
     # TensorBoard Setup
-    writer = SummaryWriter(log_dir=f'runs/fresnel_retrieval_iterations=500000_lr=1e-4_SGD')
+    writer = SummaryWriter(log_dir=f'runs/fresnel_retrieval_iterations=500_lr=1e-3_Adam_z1={z1}_z2={z2}_dx={dx}_dy={dy}_wavelength={wavelength}')
     print(f"TensorBoard writer created at: {writer.log_dir}")
     
     # Pre-compute the FFT of the impulse response
@@ -118,7 +116,9 @@ def main():
     fft_impulse_response = fft2(impulse_response_h)
     
     # Unknown object amplitude "s"
-    s = torch.rand((h, w), dtype=torch.float64, requires_grad=True, device=device)
+    # s = torch.rand((h, w), dtype=torch.float64, requires_grad=True, device=device)
+    # Unknown object amplitude "s"
+    s = torch.ones((h, w), dtype=torch.float64, requires_grad=True, device=device)
     save_Intensity(s, "initial_s.png")
 
     # Known object's phase
@@ -130,20 +130,22 @@ def main():
     r_sq = x**2 + y**2
     known_phase = torch.exp(1j * k / (2 * z1) * r_sq).to(torch.complex128)
     save_Intensity(torch.angle(known_phase), "known_phase.png")
-    s_plane_phase = torch.angle(known_phase)
-    # Normalize the phase for visualization
-    normalized_phase = (s_plane_phase + np.pi) / (2 * np.pi)
-    # Convert to a format that can be saved as an image
-    phase_array = normalized_phase.detach().cpu().numpy()
-    # Save the phase information as an image
-    output_filename = "s_plane_phase.png"
-    cv2.imwrite(output_filename, (phase_array * 255).astype(np.uint8))
-    print(f"Phase information of the s-plane saved to {output_filename}")
+    # s_plane_phase = torch.angle(known_phase)
+    # # Normalize the phase for visualization
+    # normalized_phase = (s_plane_phase + np.pi) / (2 * np.pi)
 
-    # Optimizer(SGD)
-    optimizer = torch.optim.SGD([s], lr=1e-4, momentum=0.9)
+    # # Convert to a format that can be saved as an image
+    # phase_array = normalized_phase.detach().cpu().numpy()
 
-    num_iterations = 500000
+    # # Save the phase information as an image
+    # output_filename = "s_plane_phase.png"
+    # cv2.imwrite(output_filename, (phase_array * 255).astype(np.uint8))
+    # print(f"Phase information of the s-plane saved to {output_filename}")
+
+    # Optimizer(Adam)
+    optimizer = torch.optim.Adam([s], lr=1e-3)
+
+    num_iterations = 500
     for i in range(num_iterations):
         object_wave_complex = s.to(torch.complex128) * known_phase
 
@@ -163,15 +165,14 @@ def main():
 
         # Compute phase at hologram
         phase_at_hologram = torch.angle(total_wave)
-        phase_tensor = (phase_at_hologram / (2 * np.pi) + 0.5).unsqueeze(0).unsqueeze(0)
-        writer.add_image('Phase at Hologram Plane', phase_tensor, i)
-
+        phase_tensor = (phase_at_hologram / (2 * np.pi) + 0.5).unsqueeze(0)  # shape: (1, H, W)
+        writer.add_image('Phase at Hologram Plane', phase_tensor.to(torch.float32), i, dataformats='CHW')
         simulated_intensity = torch.abs(total_wave)**2
 
         # Logging
         sim_norm_for_logging = simulated_intensity / (simulated_intensity.max() + 1e-9)
-        sim_tensor_for_logging = sim_norm_for_logging.unsqueeze(0).unsqueeze(0)
-        writer.add_image('Simulated Hologram Intensity', sim_tensor_for_logging, i)
+        sim_tensor_for_logging = sim_norm_for_logging.unsqueeze(0).to(torch.float32)   # shape: (1, H, W) == CHW
+        writer.add_image('Simulated Hologram Intensity', sim_tensor_for_logging, i, dataformats='CHW')
 
         # Loss (MSE)
         sim_norm = simulated_intensity / (simulated_intensity.max() + 1e-9)
@@ -194,6 +195,17 @@ def main():
             writer.add_image('Reconstructed Amplitude', s_tensor, i)
 
     # Save result
+    final_s_plane_wave = s.to(torch.complex128) * known_phase
+    final_s_plane_phase = torch.angle(final_s_plane_wave)
+    # Normalize the phase for visualization
+    normalized_phase = (final_s_plane_phase + np.pi) / (2 * np.pi)
+    # Convert to a format that can be saved as an image
+    phase_array = normalized_phase.detach().cpu().numpy()
+    
+    output_phase_filename = "output_reconstruction/final_s_plane_phase.png"
+    cv2.imwrite(output_phase_filename, (phase_array * 255).astype(np.uint8))
+    print(f"Final s-plane phase information saved to {output_phase_filename}")
+
     if not os.path.exists("output_reconstruction"):
         os.makedirs("output_reconstruction")
     save_Intensity(s, "output_reconstruction/reconstructed_s.png")
