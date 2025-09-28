@@ -30,7 +30,7 @@ def save_Intensity(intensity_tensor, filename):
         normalized_intensity = np.zeros_like(intensity_array)
     output_img = normalized_intensity.astype(np.uint8)
     cv2.imwrite(filename, output_img)
-    print(f"Image saved to {filename}")
+    # print(f"Image saved to {filename}")
 
 
 def create_fresnel_impulse_response(width, height, wavelength, z, dx, dy):
