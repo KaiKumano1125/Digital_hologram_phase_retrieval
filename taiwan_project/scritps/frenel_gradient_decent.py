@@ -6,6 +6,7 @@ from torch.fft import fft2, ifft2, fftshift
 import os
 import argparse
 import cv2
+import time
 from torch.utils.tensorboard import SummaryWriter
 
 # The device to run the simulation on GPU if available
@@ -84,13 +85,14 @@ def main():
     # Setup argument parser
     parser = argparse.ArgumentParser(description="Fresnel phase retrieval simulation using gradient descent.")
     parser.add_argument('--wavelength', type=float, default=500e-9, help='Wavelength in meters.')
-    parser.add_argument('--z1', type=float, default=1.0, help='Distance from light source to object in meters.')
+    parser.add_argument('--z1', type=float, default=0.5, help='Distance from light source to object in meters.')
     parser.add_argument('--z2', type=float, default=0.2, help='Distance from object to hologram plane in meters.')
     parser.add_argument('--dx', type=float, default=8.0e-6, help='Pixel size in x direction in meters.')
     parser.add_argument('--dy', type=float, default=8.0e-6, help='Pixel size in y direction in meters.')
     parser.add_argument('--pad_factor', type=int, default=2, help='Zero-padding factor.')
     parser.add_argument('--max_iter', type=int, default=500000, help='Maximum number of iterations.')
-    
+    parser.add_argument('--output_dir', type=str, default='output_reconstruction', help='Directory to save output images.')
+
     args = parser.parse_args()
 
     # Simulation parameters
@@ -101,16 +103,20 @@ def main():
     dy = args.dy
     pad_factor = args.pad_factor
     max_iter = args.max_iter
+
+    base_output_dir = args.output_dir
+    if not os.path.exists(base_output_dir):
+        os.makedirs(base_output_dir)
     
     # Load the target hologram intensity (ground truth)
-    target_intensity_path = "C:\\Users\\Kai Kumano\\workspace\\Taiwan_phase_retrieval_algorithm\\taiwan_project\\scritps\\output_gabor\\target_gt\\hologram_intensity_Z1=0.04_dx=8e-06_fr.png"
+    target_intensity_path = "C:\\Users\\Kai Kumano\\workspace\\Taiwan_phase_retrieval_algorithm\\taiwan_project\\scritps\\output_gabor\\target_gt\\hologram_intensity_Z1=0.5_dx=8e-06_Man_fr.png"
     target_intensity = read_image(target_intensity_path)
     
     h, w = target_intensity.shape
     padded_height, padded_width = h * pad_factor, w * pad_factor
     
     # TensorBoard Setup
-    writer = SummaryWriter(log_dir=f'runs/kumano_v1_lr=1e-3_z1={z1}_z2={z2}_dx={dx}_dy={dy}_wl={wavelength}')
+    writer = SummaryWriter(log_dir=f'runs/kumano_v2_lr=1e-3_z1={z1}_z2={z2}_dx={dx}_dy={dy}_wl={wavelength}')
     print(f"TensorBoard writer created at: {writer.log_dir}")
     
     # Pre-compute the FFT of the impulse response
@@ -119,7 +125,7 @@ def main():
     
     # Unknown object amplitude "s"
     s = torch.ones((h, w), dtype=torch.float64, requires_grad=True, device=device)
-    save_Intensity(s, "initial_s.png")
+    save_Intensity(s, os.path.join(base_output_dir, "initial_s.png"))
 
     # Known object's phase
     k = 2 * np.pi / wavelength
@@ -129,13 +135,19 @@ def main():
     x, y = torch.meshgrid(x_coords, y_coords, indexing='ij')
     r_sq = x**2 + y**2
     known_phase = torch.exp(1j * k / (2 * z1) * r_sq).to(torch.complex128)
-    save_Intensity(torch.angle(known_phase), "known_phase.png")
+    save_Intensity(torch.angle(known_phase), os.path.join(base_output_dir, "known_phase.png"))
 
     # Optimizer(Adam)
     optimizer = torch.optim.Adam([s], lr=1e-3)
 
+    start_time = time.time()
+    total_time = 0.0
+
+
     try:
         for i in range(max_iter):
+            iter_start_time = time.time()
+
             object_wave_complex = s.to(torch.complex128) * known_phase
 
             # Pad to larger grid
@@ -160,11 +172,24 @@ def main():
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            
+            iter_end_time = time.time()
+            iter_duration = iter_end_time - iter_start_time
+            total_time += iter_duration
 
-            # Logging and saving only every 100 iterations
-            if (i + 1) % 100 == 0:
+            # Logging and saving only every 50 iterations
+            if (i + 1) % 50 == 0:
                 print(f"Iteration {i+1}, Loss: {loss.item():.6e}")
                 writer.add_scalar('Loss/MSE', loss.item(), i)
+                writer.add_scalar('Performance/Time_Iteration', iter_duration, i)
+                
+                if device.type == 'cuda':
+                    gpu_mem_allocate = torch.cuda.memory_allocated(device) / (1024 ** 2)
+                    writer.add_scalar('Performance/GPU_Memory_Allocated', gpu_mem_allocate, i)
+
+                    cached_mem = torch.cuda.memory_reserved(device) / (1024 ** 2)
+                    writer.add_scalar('Performance/GPU_Memory_Cached', cached_mem, i)
+                print(f"Time for iteration {i+1}: {iter_duration:.4f} sec, Total time: {total_time:.2f} sec")
 
                 # Save reconstructed amplitude (for TensorBoard)
                 s_normalized = s.detach().cpu().numpy()
@@ -172,36 +197,37 @@ def main():
                 if max_val > 0:
                     s_normalized = s_normalized / max_val
                 s_tensor = torch.tensor(s_normalized, dtype=torch.float32).unsqueeze(0)
-                writer.add_image('Reconstructed Amplitude', s_tensor, i)
+                writer.add_image('Reconstructed Amplitude(s)', s_tensor, i)
 
                 # Save checkpoint outputs
-                if not os.path.exists("output_reconstruction"):
-                    os.makedirs("output_reconstruction")
-                save_Intensity(s, "output_reconstruction/reconstructed_s_latest.png")
-                save_Intensity(simulated_intensity, "output_reconstruction/simulated_hologram_intensity_latest.png")
+                if not os.path.exists("output_reconstruction/Adam_randoms_z1=0.5"):
+                    os.makedirs("output_reconstruction/Adam_randoms_z1=0.5")
+                save_Intensity(s, "output_reconstruction/Adam_randoms_z1=0.5/reconstructed_s_latest.png")
+                save_Intensity(simulated_intensity, "output_reconstruction/Adam_randoms_z1=0.5/simulated_hologram_intensity_latest.png")
 
     except KeyboardInterrupt:
         print("Training interrupted. Saving latest results...")
+
+    total_time = time.time() - start_time
+    print(f"Total time for {max_iter} iterations: {total_time:.2f} sec, Average time per iteration: {total_time / max_iter:.4f} sec")
+    
 
     # Final save after loop
     final_s_plane_wave = s.to(torch.complex128) * known_phase
     final_s_plane_phase = torch.angle(final_s_plane_wave)
     normalized_phase = (final_s_plane_phase + np.pi) / (2 * np.pi)
     phase_array = normalized_phase.detach().cpu().numpy()
-
-    if not os.path.exists("output_reconstruction"):
-        os.makedirs("output_reconstruction")
-
-    output_phase_filename = "output_reconstruction/final_s_plane_phase.png"
+    
+    output_phase_filename = os.path.join(base_output_dir, "final_s_plane_phase.png")
     cv2.imwrite(output_phase_filename, (phase_array * 255).astype(np.uint8))
     print(f"Final s-plane phase information saved to {output_phase_filename}")
-
-    save_Intensity(s, "output_reconstruction/reconstructed_s_final.png")
-    save_Intensity(simulated_intensity, "output_reconstruction/simulated_hologram_intensity_final.png")
+    
+    # 2. Save reconstructed amplitude and simulated hologram (.png)
+    save_Intensity(s, os.path.join(base_output_dir, "reconstructed_s.png"))
+    save_Intensity(simulated_intensity, os.path.join(base_output_dir, "simulated_hologram_intensity.png"))
 
     print("Reconstruction complete.")
     writer.close()
-
 
 if __name__ == "__main__":
     main()
