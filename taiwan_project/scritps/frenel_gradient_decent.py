@@ -85,12 +85,12 @@ def main():
     # Setup argument parser
     parser = argparse.ArgumentParser(description="Fresnel phase retrieval simulation using gradient descent.")
     parser.add_argument('--wavelength', type=float, default=500e-9, help='Wavelength in meters.')
-    parser.add_argument('--z1', type=float, default=0.5, help='Distance from light source to object in meters.')
+    parser.add_argument('--z1', type=float, default=1.0, help='Distance from light source to object in meters.')
     parser.add_argument('--z2', type=float, default=0.2, help='Distance from object to hologram plane in meters.')
     parser.add_argument('--dx', type=float, default=8.0e-6, help='Pixel size in x direction in meters.')
     parser.add_argument('--dy', type=float, default=8.0e-6, help='Pixel size in y direction in meters.')
     parser.add_argument('--pad_factor', type=int, default=2, help='Zero-padding factor.')
-    parser.add_argument('--max_iter', type=int, default=500000, help='Maximum number of iterations.')
+    parser.add_argument('--max_iter', type=int, default=2000, help='Maximum number of iterations.')
     parser.add_argument('--output_dir', type=str, default='output_reconstruction', help='Directory to save output images.')
 
     args = parser.parse_args()
@@ -109,14 +109,14 @@ def main():
         os.makedirs(base_output_dir)
     
     # Load the target hologram intensity (ground truth)
-    target_intensity_path = "C:\\Users\\Kai Kumano\\workspace\\Taiwan_phase_retrieval_algorithm\\taiwan_project\\scritps\\output_gabor\\target_gt\\hologram_intensity_Z1=0.5_dx=8e-06_Man_fr.png"
+    target_intensity_path = "C:\\Users\\Kai Kumano\\workspace\\Taiwan_phase_retrieval_algorithm\\taiwan_project\\scritps\\output_gabor\\target_gt\\hologram_intensity_Z1=1.0_dx=8e-06_Man_fr.png"
     target_intensity = read_image(target_intensity_path)
     
     h, w = target_intensity.shape
     padded_height, padded_width = h * pad_factor, w * pad_factor
     
     # TensorBoard Setup
-    writer = SummaryWriter(log_dir=f'runs/kumano_v2_lr=1e-3_z1={z1}_z2={z2}_dx={dx}_dy={dy}_wl={wavelength}')
+    writer = SummaryWriter(log_dir=f'runs/adam_z1={z1}')
     print(f"TensorBoard writer created at: {writer.log_dir}")
     
     # Pre-compute the FFT of the impulse response
@@ -185,10 +185,10 @@ def main():
                 
                 if device.type == 'cuda':
                     gpu_mem_allocate = torch.cuda.memory_allocated(device) / (1024 ** 2)
-                    writer.add_scalar('Performance/GPU_Memory_Allocated', gpu_mem_allocate, i)
+                    writer.add_scalar('Performance/GPU_Memory_Allocated_MB', gpu_mem_allocate, i)
 
                     cached_mem = torch.cuda.memory_reserved(device) / (1024 ** 2)
-                    writer.add_scalar('Performance/GPU_Memory_Cached', cached_mem, i)
+                    writer.add_scalar('Performance/GPU_Memory_Cached_MB', cached_mem, i)
                 print(f"Time for iteration {i+1}: {iter_duration:.4f} sec, Total time: {total_time:.2f} sec")
 
                 # Save reconstructed amplitude (for TensorBoard)
@@ -200,10 +200,11 @@ def main():
                 writer.add_image('Reconstructed Amplitude(s)', s_tensor, i)
 
                 # Save checkpoint outputs
-                if not os.path.exists("output_reconstruction/Adam_randoms_z1=0.5"):
-                    os.makedirs("output_reconstruction/Adam_randoms_z1=0.5")
-                save_Intensity(s, "output_reconstruction/Adam_randoms_z1=0.5/reconstructed_s_latest.png")
-                save_Intensity(simulated_intensity, "output_reconstruction/Adam_randoms_z1=0.5/simulated_hologram_intensity_latest.png")
+                # if not os.path.exists("output_reconstruction/Adam_randoms_z1=0.5"):
+                #     os.makedirs("output_reconstruction/Adam_randoms_z1=0.5")
+                save_Intensity(s, os.path.join(base_output_dir, "reconstructed_s_progress.png"))
+                save_Intensity(simulated_intensity, os.path.join(base_output_dir, "simulated_hologram_intensity_progress.png"))
+                # --- END CHECKPOINT SAVE ---
 
     except KeyboardInterrupt:
         print("Training interrupted. Saving latest results...")
