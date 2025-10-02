@@ -13,6 +13,11 @@ from torch.utils.tensorboard import SummaryWriter
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"using device: {device}")
 
+#Total vairiation loss function
+def total_variation_loss_function(img):
+    tv_h = torch.sum(torch.abs(img[:-1, :] - img[1:, :]))
+    tv_w = torch.sum(torch.abs(img[:, :-1] - img[:, 1:]))
+    return tv_h + tv_w
 
 def read_image(filename):
     img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
@@ -85,13 +90,14 @@ def main():
     # Setup argument parser
     parser = argparse.ArgumentParser(description="Fresnel phase retrieval simulation using gradient descent.")
     parser.add_argument('--wavelength', type=float, default=500e-9, help='Wavelength in meters.')
-    parser.add_argument('--z1', type=float, default=1.0, help='Distance from light source to object in meters.')
-    parser.add_argument('--z2', type=float, default=0.2, help='Distance from object to hologram plane in meters.')
-    parser.add_argument('--dx', type=float, default=8.0e-6, help='Pixel size in x direction in meters.')
-    parser.add_argument('--dy', type=float, default=8.0e-6, help='Pixel size in y direction in meters.')
+    parser.add_argument('--z1', type=float, default=0.05, help='Distance from light source to object in meters.')
+    parser.add_argument('--z2', type=float, default=0.002, help='Distance from object to hologram plane in meters.')
+    parser.add_argument('--dx', type=float, default=5.0e-7, help='Pixel size in x direction in meters.')
+    parser.add_argument('--dy', type=float, default=5.0e-7, help='Pixel size in y direction in meters.')
     parser.add_argument('--pad_factor', type=int, default=2, help='Zero-padding factor.')
-    parser.add_argument('--max_iter', type=int, default=2000, help='Maximum number of iterations.')
+    parser.add_argument('--max_iter', type=int, default=10000, help='Maximum number of iterations.')
     parser.add_argument('--output_dir', type=str, default='output_reconstruction', help='Directory to save output images.')
+    parser.add_argument('--tv_weight', type=float, default=1e-8, help='Weight for total variation loss.')
 
     args = parser.parse_args()
 
@@ -103,20 +109,21 @@ def main():
     dy = args.dy
     pad_factor = args.pad_factor
     max_iter = args.max_iter
+    tv_weight = args.tv_weight
 
     base_output_dir = args.output_dir
     if not os.path.exists(base_output_dir):
         os.makedirs(base_output_dir)
     
     # Load the target hologram intensity (ground truth)
-    target_intensity_path = "C:\\Users\\Kai Kumano\\workspace\\Taiwan_phase_retrieval_algorithm\\taiwan_project\\scritps\\output_gabor\\target_gt\\hologram_intensity_Z1=1.0_dx=8e-06_Man_fr.png"
+    target_intensity_path = "C:\\Users\\Kai Kumano\\workspace\\Taiwan_phase_retrieval_algorithm\\taiwan_project\\scritps\\output_gabor\\target_gt\\hologram_intensity_Z1=0.05_dx=5e-07_complex_fr.png"
     target_intensity = read_image(target_intensity_path)
     
     h, w = target_intensity.shape
     padded_height, padded_width = h * pad_factor, w * pad_factor
     
     # TensorBoard Setup
-    writer = SummaryWriter(log_dir=f'runs/adam_z1={z1}')
+    writer = SummaryWriter(log_dir=f'runs/phase_input_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
     print(f"TensorBoard writer created at: {writer.log_dir}")
     
     # Pre-compute the FFT of the impulse response
@@ -124,8 +131,11 @@ def main():
     fft_impulse_response = fft2(impulse_response_h)
     
     # Unknown object amplitude "s"
-    s = torch.ones((h, w), dtype=torch.float64, requires_grad=True, device=device)
-    save_Intensity(s, os.path.join(base_output_dir, "initial_s.png"))
+    # s = torch.ones((h, w), dtype=torch.float64, requires_grad=True, device=device)
+    amp_param = torch.ones((h,w), dtype=torch.float64, device=device, requires_grad=True)
+    phase_param = torch.rand((h,w), dtype=torch.float64, device=device, requires_grad=True) 
+
+    save_Intensity(amp_param, os.path.join(base_output_dir, "initial_s.png"))
 
     # Known object's phase
     k = 2 * np.pi / wavelength
@@ -138,7 +148,7 @@ def main():
     save_Intensity(torch.angle(known_phase), os.path.join(base_output_dir, "known_phase.png"))
 
     # Optimizer(Adam)
-    optimizer = torch.optim.Adam([s], lr=1e-3)
+    optimizer = torch.optim.Adam([amp_param, phase_param], lr=1e-3)
 
     start_time = time.time()
     total_time = 0.0
@@ -148,7 +158,8 @@ def main():
         for i in range(max_iter):
             iter_start_time = time.time()
 
-            object_wave_complex = s.to(torch.complex128) * known_phase
+            object_wave_complex = (amp_param * torch.exp(1j * phase_param)).to(torch.complex128)
+            # object_wave_complex = s.to(torch.complex128) * known_phase
 
             # Pad to larger grid
             padded_object_wave = torch.zeros((padded_height, padded_width), dtype=torch.complex128, device=device)
@@ -167,7 +178,13 @@ def main():
             # Loss (MSE)
             sim_norm = simulated_intensity / (simulated_intensity.max() + 1e-9)
             tgt_norm = target_intensity / (target_intensity.max() + 1e-9)
-            loss = torch.nn.functional.mse_loss(sim_norm, tgt_norm)
+
+            mse_loss = torch.nn.functional.mse_loss(sim_norm, tgt_norm)
+
+            tv_amp = total_variation_loss_function(amp_param)
+            tv_phase = total_variation_loss_function(phase_param)
+            loss = mse_loss + tv_weight * (tv_amp + tv_phase)
+            # loss = torch.nn.functional.mse_loss(sim_norm, tgt_norm)
 
             optimizer.zero_grad()
             loss.backward()
@@ -179,8 +196,12 @@ def main():
 
             # Logging and saving only every 50 iterations
             if (i + 1) % 50 == 0:
-                print(f"Iteration {i+1}, Loss: {loss.item():.6e}")
-                writer.add_scalar('Loss/MSE', loss.item(), i)
+                # print(f"Iteration {i+1}, Loss: {loss.item():.6e}")
+                # writer.add_scalar('Loss', loss.item(), i)
+                # writer.add_scalar('Performance/Time_Iteration', iter_duration, i)
+                print(f"Iteration {i+1}, MSE_Loss: {mse_loss.item():.6e}, TV_Loss: {tv_amp.item():.6e}, Total_Loss: {loss.item():.6e}")
+                writer.add_scalar('Loss/MSE', mse_loss.item(), i)
+                writer.add_scalar('Loss/TV', tv_amp.item(), i)
                 writer.add_scalar('Performance/Time_Iteration', iter_duration, i)
                 
                 if device.type == 'cuda':
@@ -192,18 +213,29 @@ def main():
                 print(f"Time for iteration {i+1}: {iter_duration:.4f} sec, Total time: {total_time:.2f} sec")
 
                 # Save reconstructed amplitude (for TensorBoard)
-                s_normalized = s.detach().cpu().numpy()
-                max_val = np.max(s_normalized)
-                if max_val > 0:
-                    s_normalized = s_normalized / max_val
-                s_tensor = torch.tensor(s_normalized, dtype=torch.float32).unsqueeze(0)
-                writer.add_image('Reconstructed Amplitude(s)', s_tensor, i)
+                save_Intensity(amp_param, os.path.join(base_output_dir, "reconstructed_amplitude_progress.png"))
+                amp_normalized = amp_param.detach().cpu().numpy()
+                writer.add_image('Reconstructed Amplitude(a)', torch.tensor(amp_normalized, dtype=torch.float32).unsqueeze(0), i)
+                # Save reconstructed phase (for TensorBoard)
+                save_Intensity(phase_param, os.path.join(base_output_dir, "reconstructed_phase_progress.png"))
+                phase_normalized = (phase_param.detach().cpu().numpy() + np.pi) / (2 * np.pi)
+                writer.add_image('Reconstructed Phase(phi)', torch.tensor(phase_normalized, dtype=torch.float32).unsqueeze(0), i)
+
+                complex_field_tensor = (amp_param.detach() * torch.exp(1j * phase_param.detach()))
+                complex_field_np = complex_field_tensor.cpu().numpy()
+                np.save(os.path.join(base_output_dir, "reconstructed_complex_field.npy"), complex_field_np)
+
+                # max_val = np.max(s_normalized)
+                # if max_val > 0:
+                #     s_normalized = s_normalized / max_val
+                # s_tensor = torch.tensor(s_normalized, dtype=torch.float32).unsqueeze(0)
+                # writer.add_image('Reconstructed Amplitude(s)', s_tensor, i)
 
                 # Save checkpoint outputs
                 # if not os.path.exists("output_reconstruction/Adam_randoms_z1=0.5"):
                 #     os.makedirs("output_reconstruction/Adam_randoms_z1=0.5")
-                save_Intensity(s, os.path.join(base_output_dir, "reconstructed_s_progress.png"))
-                save_Intensity(simulated_intensity, os.path.join(base_output_dir, "simulated_hologram_intensity_progress.png"))
+                # save_Intensity(s, os.path.join(base_output_dir, "reconstructed_s_progress.png"))
+                # save_Intensity(simulated_intensity, os.path.join(base_output_dir, "simulated_hologram_intensity_progress.png"))
                 # --- END CHECKPOINT SAVE ---
 
     except KeyboardInterrupt:
@@ -214,18 +246,28 @@ def main():
     
 
     # Final save after loop
-    final_s_plane_wave = s.to(torch.complex128) * known_phase
-    final_s_plane_phase = torch.angle(final_s_plane_wave)
-    normalized_phase = (final_s_plane_phase + np.pi) / (2 * np.pi)
-    phase_array = normalized_phase.detach().cpu().numpy()
+    final_complex = amp_param * torch.exp(1j * phase_param)
+
+    amp_final = final_complex.abs()
+    save_Intensity(amp_final, os.path.join(base_output_dir, "final_s_plane_amplitude.png"))
+
+    phase_final = torch.angle(final_complex)
+    save_Intensity(phase_final, os.path.join(base_output_dir, "final_s_plane_phase.png"))
+    # final_s_plane_phase = torch.angle(final_s_plane_wave)
+    # normalized_phase = (final_s_plane_phase + np.pi) / (2 * np.pi)
+    # phase_array = normalized_phase.detach().cpu().numpy()
     
-    output_phase_filename = os.path.join(base_output_dir, "final_s_plane_phase.png")
-    cv2.imwrite(output_phase_filename, (phase_array * 255).astype(np.uint8))
-    print(f"Final s-plane phase information saved to {output_phase_filename}")
+    # output_phase_filename = os.path.join(base_output_dir, "final_s_plane_phase.png")
+    # cv2.imwrite(output_phase_filename, (phase_array * 255).astype(np.uint8))
+
+    final_complex_np = final_complex.detach().cpu().numpy()
+    np.save(os.path.join(base_output_dir, "final_s_plane_complex.npy"), final_complex_np)
+    
+    print(f"Final s-plane phase information saved")
     
     # 2. Save reconstructed amplitude and simulated hologram (.png)
-    save_Intensity(s, os.path.join(base_output_dir, "reconstructed_s.png"))
-    save_Intensity(simulated_intensity, os.path.join(base_output_dir, "simulated_hologram_intensity.png"))
+    # save_Intensity(s, os.path.join(base_output_dir, "reconstructed_s.png"))
+    # save_Intensity(simulated_intensity, os.path.join(base_output_dir, "simulated_hologram_intensity.png"))
 
     print("Reconstruction complete.")
     writer.close()
