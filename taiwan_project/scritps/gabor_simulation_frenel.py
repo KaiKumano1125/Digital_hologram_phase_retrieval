@@ -63,7 +63,6 @@ def fresnel_convolution_propagation(input_wave, original_width, original_height,
 
     # Apply band-limiting in the frequency domain
     if band_limit:
-        # These are the limits from your C++ code, converted to Python
         u_lim = 1 / (wavelength * np.sqrt((2 * dx * z)**2 + 1))
         v_lim = 1 / (wavelength * np.sqrt((2 * dy * z)**2 + 1))
         
@@ -89,14 +88,17 @@ def fresnel_convolution_propagation(input_wave, original_width, original_height,
 def main():
     # Simulation parameters
     wavelength = 500e-9  # 500 nm
-    z1 = 0.133            # distance from light source to object
-    z2 = 0.2             # distance from object to hologram plane
+    z1 = 0.05            # distance from light source to object
+    z2 = 0.002             # distance from object to hologram plane
     dx = 5.0e-7          # pixel size
     dy = 5.0e-7
     band_limit = True
 
     # Input file
-    object_filename = "input/Object.bmp"
+    object_filename = "input/Man.bmp"
+    #crop the input image, fill 1 value around the image
+
+
 
     try:
         original_image = read_image(object_filename)
@@ -120,7 +122,7 @@ def main():
 
     # Compute and save the hologram's intensity
     hologram_intensity = np.abs(total_wave)**2
-    output_filename = f"output_gabor/frenel_diffraction/with_bl/z2=0.2m/z1=0.133m/hologram_intensity_Z1={z1}_dx={dx}_Object_fr.png"
+    output_filename = f"output_gabor/frenel_diffraction/with_bl/z2=0.002m/z1=0.05m/hologram_intensity_Z1={z1}_dx={dx}_object_padded_fr.png"
     if not os.path.exists(os.path.dirname(output_filename)):
         os.makedirs(os.path.dirname(output_filename))
     save_intensity(hologram_intensity, output_filename)
