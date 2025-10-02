@@ -84,6 +84,13 @@ def fresnel_convolution_propagation(input_wave, original_width, original_height,
     cropped_wave = propagated_wave[start_y:start_y+original_height, start_x:start_x+original_width]
     return cropped_wave
 
+def create_phase_map(width, height, max_phase_rad):
+    x = np.arange(width)
+    y = np.arange(height)
+
+    phase_map = np.outer(np.ones(height), x / width) * max_phase_rad
+    return phase_map
+    
 
 def main():
     # Simulation parameters
@@ -93,6 +100,7 @@ def main():
     dx = 5.0e-7          # pixel size
     dy = 5.0e-7
     band_limit = True
+    max_phase_rad = np.pi / 2  # maximum phase shift in radians
 
     # Input file
     object_filename = "input/Man.bmp"
@@ -101,15 +109,17 @@ def main():
 
 
     try:
-        original_image = read_image(object_filename)
+        original_amplitude = read_image(object_filename)
     except FileNotFoundError as e:
         print(e)
         return
-    original_height, original_width = original_image.shape
-    
+    original_height, original_width = original_amplitude.shape
+
+    phase_map = create_phase_map(original_width, original_height, max_phase_rad)
+
     # Create the initial object wave (as a complex array)
-    object_wave = original_image.astype(np.complex128)
-    
+    object_wave = original_amplitude * np.exp(1j * phase_map)
+
     # Generate and propagate the spherical reference wave
     spherical_wave = generate_reference_wave(original_width, original_height, wavelength, z1)
     reference_wave_at_hologram = fresnel_convolution_propagation(spherical_wave, original_width, original_height, wavelength, z1 + z2, dx, dy, band_limit=band_limit)
@@ -122,7 +132,7 @@ def main():
 
     # Compute and save the hologram's intensity
     hologram_intensity = np.abs(total_wave)**2
-    output_filename = f"output_gabor/frenel_diffraction/with_bl/z2=0.002m/z1=0.05m/hologram_intensity_Z1={z1}_dx={dx}_object_padded_fr.png"
+    output_filename = f"output_gabor/frenel_diffraction/with_bl/z2=0.002m/z1=0.05m/complex/hologram_intensity_Z1={z1}_dx={dx}_object_padded_fr.png"
     if not os.path.exists(os.path.dirname(output_filename)):
         os.makedirs(os.path.dirname(output_filename))
     save_intensity(hologram_intensity, output_filename)
