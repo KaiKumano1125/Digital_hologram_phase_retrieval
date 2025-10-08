@@ -40,37 +40,33 @@ def save_Intensity(intensity_tensor, filename):
 
 def angular_function(width, height, wavelength, z, dx, dy):
     k = 2 * np.pi / wavelength
-    fx = torch.fft.fftfreq(width, d=dx, device=device)
     fy = torch.fft.fftfreq(height, d=dy, device=device)
-    fx, fy = torch.meshgrid(fx, fy, indexing='xy')
+    fx = torch.fft.fftfreq(width, d=dx, device=device)
+    
+    fy,fx = torch.meshgrid(fy, fx, indexing='ij')
 
-    fx_sq = (wavelength * fx) ** 2
-    fy_sq = (wavelength * fy) ** 2
+    prop_mask = ((wavelength * fx)**2 + (wavelength * fy)**2 <= 1.0)
 
-    kz_sq = 1.0 - fx_sq - fy_sq
-    kz = k * torch.sqrt(torch.where(kz_sq < 0, kz_sq, torch.zeros_like(kz_sq)))
+    kz = torch.sqrt((1.0/wavelength)**2 - fx**2 - fy**2 + 0j)
 
-    H = torch.exp(1j * kz * z).to(torch.complex128)
-    return H
+    H = torch.exp(1j * 2*np.pi*kz * z)
+    H *= prop_mask
+    return H.to(torch.complex128)
 
 def angular_spectrum_prop(input_wave, transfer_function, cropped_width, cropped_height):
-    padded_height, padded_width = input_wave.shape
-
     fft_input = fft2(input_wave)
-    propagated_spectrum = fft_input * transfer_function
-    propagated_wave = ifft2(propagated_spectrum)
+    propagated_wave = ifft2(fft_input * transfer_function)
 
-    start_y = padded_height // 2 - cropped_height // 2
-    start_x = padded_width // 2 - cropped_width // 2
-    cropped_wave = propagated_wave[start_y:start_y+cropped_height, start_x:start_x+cropped_width]
-    return cropped_wave
+    start_y = input_wave.shape[0] // 2 - cropped_height // 2
+    start_x = input_wave.shape[1] // 2 - cropped_width // 2
+    return propagated_wave[start_y:start_y+cropped_height, start_x:start_x+cropped_width]
 
 
-def generate_spherical_reference_wave_tensor(width, height, wavelength, z):
+def generate_spherical_reference_wave_tensor(width, height, wavelength, z, dx, dy):
     k = 2 * np.pi / wavelength
     cx, cy = width // 2, height // 2
-    x = torch.arange(width, device=device) - cx
-    y = torch.arange(height, device=device) - cy
+    x = (torch.arange(width, device=device) - cx) * dx
+    y = (torch.arange(height, device=device) - cy) * dy
     x, y = torch.meshgrid(x, y, indexing='ij')
 
     r_sq = x**2 + y**2 + z**2
@@ -92,7 +88,7 @@ def main():
     parser.add_argument('--dx', type=float, default=5.0e-7, help='Pixel size in x direction in meters.')
     parser.add_argument('--dy', type=float, default=5.0e-7, help='Pixel size in y direction in meters.')
     parser.add_argument('--pad_factor', type=int, default=2, help='Zero-padding factor.')
-    parser.add_argument('--max_iter', type=int, default=20000, help='Maximum number of iterations.')
+    parser.add_argument('--max_iter', type=int, default=30000, help='Maximum number of iterations.')
     parser.add_argument('--output_dir', type=str, default='output_reconstruction', help='Directory to save output images.')
     parser.add_argument('--tv_weight', type=float, default=1e-8, help='Weight for total variation loss.')
 
@@ -120,7 +116,7 @@ def main():
     padded_height, padded_width = h * pad_factor, w * pad_factor
     
     # TensorBoard Setup
-    writer = SummaryWriter(log_dir=f'runs/asm_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
+    writer = SummaryWriter(log_dir=f'runs/asmV2_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
     print(f"TensorBoard writer created at: {writer.log_dir}")
     
     # Pre-compute the angular spectrum transfer function
@@ -149,7 +145,7 @@ def main():
     save_Intensity(torch.angle(known_phase), os.path.join(base_output_dir, "known_phase.png"))
 
     # Optimizer(Adam)
-    optimizer = torch.optim.Adam([amp_param, phase_param], lr=1e-3)
+    optimizer = torch.optim.Adam([amp_param, phase_param], lr=1e-4)
 
     start_time = time.time()
     total_time = 0.0
@@ -170,7 +166,7 @@ def main():
 
             # Propagation
             propagated_object_wave = angular_spectrum_prop(padded_object_wave, transfer_function_z2, w, h)
-            spherical_wave = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2)
+            spherical_wave = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2, dx, dy)
             reference_wave_at_hologram = angular_spectrum_prop(spherical_wave, transfer_function_z1_z2, w, h)
             total_wave = propagated_object_wave + reference_wave_at_hologram
 
