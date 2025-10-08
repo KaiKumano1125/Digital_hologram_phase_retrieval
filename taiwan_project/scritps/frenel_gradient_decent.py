@@ -45,7 +45,7 @@ def create_fresnel_impulse_response(width, height, wavelength, z, dx, dy):
     
     x_coords = (torch.arange(width, device=device) - cx) * dx
     y_coords = (torch.arange(height, device=device) - cy) * dy
-    x, y = torch.meshgrid(x_coords, y_coords, indexing='xy')
+    x, y = torch.meshgrid(x_coords, y_coords, indexing='ij')
     r_sq = x**2 + y**2
     phase = k / (2 * z) * r_sq
     
@@ -69,11 +69,11 @@ def fresnel_convolution_prop(input_wave, impulse_response_fft, crop_width, crop_
     return cropped_wave
 
 
-def generate_spherical_reference_wave_tensor(width, height, wavelength, z):
+def generate_spherical_reference_wave_tensor(width, height, wavelength, z, dx, dy):
     k = 2 * np.pi / wavelength
     cx, cy = width // 2, height // 2
-    x = torch.arange(width, device=device) - cx
-    y = torch.arange(height, device=device) - cy
+    x = (torch.arange(width, device=device) - cx) * dx
+    y = (torch.arange(height, device=device) - cy) * dy
     x, y = torch.meshgrid(x, y, indexing='ij')
 
     r_sq = x**2 + y**2 + z**2
@@ -123,7 +123,7 @@ def main():
     padded_height, padded_width = h * pad_factor, w * pad_factor
     
     # TensorBoard Setup
-    writer = SummaryWriter(log_dir=f'runs/phase_input_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
+    writer = SummaryWriter(log_dir=f'runs/fresnel_phase_input_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
     print(f"TensorBoard writer created at: {writer.log_dir}")
     
     # Pre-compute the FFT of the impulse response
@@ -169,7 +169,7 @@ def main():
 
             # Propagation
             propagated_object_wave = fresnel_convolution_prop(padded_object_wave, fft_impulse_response, w, h)
-            spherical_wave = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2)
+            spherical_wave = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2, dx, dy)
             reference_wave_at_hologram = fresnel_convolution_prop(spherical_wave, fft_impulse_response, w, h)
             total_wave = propagated_object_wave + reference_wave_at_hologram
 
@@ -267,7 +267,7 @@ def main():
     
     # 2. Save reconstructed amplitude and simulated hologram (.png)
     # save_Intensity(s, os.path.join(base_output_dir, "reconstructed_s.png"))
-    # save_Intensity(simulated_intensity, os.path.join(base_output_dir, "simulated_hologram_intensity.png"))
+    save_Intensity(simulated_intensity, os.path.join(base_output_dir, "simulated_hologram_intensity.png"))
 
     print("Reconstruction complete.")
     writer.close()
