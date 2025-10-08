@@ -62,11 +62,11 @@ def angular_spectrum_prop(input_wave, transfer_function, cropped_width, cropped_
     return propagated_wave[start_y:start_y+cropped_height, start_x:start_x+cropped_width]
 
 
-def generate_spherical_reference_wave_tensor(width, height, wavelength, z, dx, dy):
+def generate_spherical_reference_wave_tensor(width, height, wavelength, z):
     k = 2 * np.pi / wavelength
     cx, cy = width // 2, height // 2
-    x = (torch.arange(width, device=device) - cx) * dx
-    y = (torch.arange(height, device=device) - cy) * dy
+    x = (torch.arange(width, device=device) - cx) 
+    y = (torch.arange(height, device=device) - cy) 
     x, y = torch.meshgrid(x, y, indexing='ij')
 
     r_sq = x**2 + y**2 + z**2
@@ -145,7 +145,7 @@ def main():
     save_Intensity(torch.angle(known_phase), os.path.join(base_output_dir, "known_phase.png"))
 
     # Optimizer(Adam)
-    optimizer = torch.optim.Adam([amp_param, phase_param], lr=1e-4)
+    optimizer = torch.optim.Adam([amp_param, phase_param], lr=1e-3)
 
     start_time = time.time()
     total_time = 0.0
@@ -166,7 +166,7 @@ def main():
 
             # Propagation
             propagated_object_wave = angular_spectrum_prop(padded_object_wave, transfer_function_z2, w, h)
-            spherical_wave = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2, dx, dy)
+            spherical_wave = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2)
             reference_wave_at_hologram = angular_spectrum_prop(spherical_wave, transfer_function_z1_z2, w, h)
             total_wave = propagated_object_wave + reference_wave_at_hologram
 
