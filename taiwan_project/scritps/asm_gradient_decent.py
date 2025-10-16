@@ -9,7 +9,6 @@ import cv2
 import time
 from torch.utils.tensorboard import SummaryWriter
 
-
 # The device to run the simulation on GPU if available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"using device: {device}")
@@ -89,15 +88,11 @@ def main():
     parser.add_argument('--dx', type=float, default=5.0e-7, help='Pixel size in x direction in meters.')
     parser.add_argument('--dy', type=float, default=5.0e-7, help='Pixel size in y direction in meters.')
     parser.add_argument('--pad_factor', type=int, default=2, help='Zero-padding factor.')
-    parser.add_argument('--max_iter', type=int, default=20000, help='Maximum number of iterations.')
+    parser.add_argument('--max_iter', type=int, default=30000, help='Maximum number of iterations.')
     parser.add_argument('--output_dir', type=str, default='output_reconstruction', help='Directory to save output images.')
     parser.add_argument('--tv_weight', type=float, default=1e-8, help='Weight for total variation loss.')
 
     args = parser.parse_args()
-
-    #flag for using reference intensity constraint
-    use_reference_constraint = True
-
 
     # Simulation parameters
     wavelength = args.wavelength
@@ -108,7 +103,6 @@ def main():
     pad_factor = args.pad_factor
     max_iter = args.max_iter
     tv_weight = args.tv_weight
-    lambda_ref = 1e-4
 
     base_output_dir = args.output_dir
     if not os.path.exists(base_output_dir):
@@ -117,19 +111,14 @@ def main():
     # Load the target hologram intensity (ground truth)
     target_intensity_path = "C:\\Users\\Kai Kumano\\workspace\\Taiwan_phase_retrieval_algorithm\\taiwan_project\\scritps\\output_gabor\\target_gt\\asm\\hologram_intensity_Z1=0.05_dx=5e-07_man.png"
     target_intensity = read_image(target_intensity_path)
-
-    # Load known reference intensity (|R|^2)
-    reference_intensity_path = "C:\\Users\\Kai Kumano\\workspace\\Taiwan_phase_retrieval_algorithm\\taiwan_project\\scritps\\output_gabor\\target_gt\\asm\\I_R.png"
-    reference_intensity = read_image(reference_intensity_path)
-
     
     h, w = target_intensity.shape
     padded_height, padded_width = h * pad_factor, w * pad_factor
     
     # TensorBoard Setup
-    writer = SummaryWriter(log_dir=f'runs/asm_ref-constraints_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
+    writer = SummaryWriter(log_dir=f'runs/asmV2_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
     print(f"TensorBoard writer created at: {writer.log_dir}")
-
+    
     # Pre-compute the angular spectrum transfer function
     transfer_function_z2 = angular_function(padded_width, padded_height, wavelength, z2, dx, dy)
     transfer_function_z1_z2 = angular_function(padded_width, padded_height, wavelength, z1 + z2, dx, dy)
@@ -189,37 +178,14 @@ def main():
 
             mse_loss = torch.nn.functional.mse_loss(sim_norm, tgt_norm)
 
-            # reference intensity constraint
-            u = amp_param * torch.exp(1j * phase_param)
-            u_padded = torch.zeros((padded_height, padded_width), dtype=torch.complex128, device=device)
-            u_padded[start_y:start_y+h, start_x:start_x+w] = u
-
-            u_prop = angular_spectrum_prop(u_padded, transfer_function_z2, w, h)
-            spherical_ref = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2)
-            ref_wave = angular_spectrum_prop(spherical_ref, transfer_function_z1_z2, w, h)
-
-            # Combine to form total hologram field
-            total_field_est = u_prop + ref_wave
-
-            sim_ref_intensity = torch.abs(total_field_est - u_)**2
-            ref_norm = sim_ref_intensity / (sim_ref_intensity.max() + 1e-9)
-            known_ref_norm = reference_intensity / (reference_intensity.max() + 1e-9)
-            loss_reference_intensity = torch.nn.functional.mse_loss(ref_norm, known_ref_norm)
-
-
             tv_amp = total_variation_loss_function(amp_param)
             tv_phase = total_variation_loss_function(phase_param)
-
-            if use_reference_constraint:
-                loss = mse_loss + lambda_ref * loss_reference_intensity + tv_weight * (tv_amp + tv_phase)
-            else:
-                loss = mse_loss + tv_weight * (tv_amp + tv_phase)
+            loss = mse_loss + tv_weight * (tv_amp + tv_phase)
             # loss = torch.nn.functional.mse_loss(sim_norm, tgt_norm)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
             
             iter_end_time = time.time()
             iter_duration = iter_end_time - iter_start_time
@@ -234,8 +200,6 @@ def main():
                 writer.add_scalar('Loss/MSE', mse_loss.item(), i)
                 writer.add_scalar('Loss/TV', tv_amp.item(), i)
                 writer.add_scalar('Performance/Time_Iteration', iter_duration, i)
-                writer.add_scalar('Loss/Reference', loss_reference_intensity.item(), i)
-
                 
                 if device.type == 'cuda':
                     gpu_mem_allocate = torch.cuda.memory_allocated(device) / (1024 ** 2)
@@ -245,12 +209,10 @@ def main():
                     writer.add_scalar('Performance/GPU_Memory_Cached_MB', cached_mem, i)
                 print(f"Time for iteration {i+1}: {iter_duration:.4f} sec, Total time: {total_time:.2f} sec")
 
-
                 # Save reconstructed amplitude (for TensorBoard)
                 save_Intensity(amp_param, os.path.join(base_output_dir, "reconstructed_amplitude_progress.png"))
                 amp_normalized = amp_param.detach().cpu().numpy()
                 writer.add_image('Reconstructed Amplitude(a)', torch.tensor(amp_normalized, dtype=torch.float32).unsqueeze(0), i)
-
                 # Save reconstructed phase (for TensorBoard)
                 save_Intensity(phase_param, os.path.join(base_output_dir, "reconstructed_phase_progress.png"))
                 phase_normalized = (phase_param.detach().cpu().numpy() + np.pi) / (2 * np.pi)

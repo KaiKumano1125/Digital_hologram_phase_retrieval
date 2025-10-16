@@ -44,7 +44,11 @@ def angular_spectrum_propagation(input_wave, width, height, wavelength, z, dx, d
     fy = np.fft.fftfreq(height, d=dy)
     fx, fy = np.meshgrid(fx, fy)
 
-    H = np.exp(1j * z * k * np.sqrt(1.0 - (wavelength * fx)**2 - (wavelength * fy)**2))
+    kz_sq = 1.0 - (wavelength * fx)**2 - (wavelength * fy)**2
+    prop_mask = kz_sq >= 0
+
+    H = np.zeros_like(angular_spectrum, dtype=np.complex128)
+    H[prop_mask] = np.exp(1j * z * k * np.sqrt(kz_sq[prop_mask]))
 
     #apply band-limiting if enable
     if band_limit:
@@ -109,6 +113,11 @@ def main():
     # Generate and propagate the spherical reference wave
     spherical_wave = generate_reference_wave(padded_width, padded_height, wavelength, z1)
     reference_wave_at_hologram = angular_spectrum_propagation(spherical_wave, padded_width, padded_height, wavelength, z1 + z2, dx, dy, band_limit=band_limit)
+    #save reference wave intensity
+    I_R = np.abs(reference_wave_at_hologram)**2
+    I_R_norm = I_R / np.max(I_R)
+    cropped_I_R_norm = I_R_norm[start_y:start_y+original_height, start_x:start_x+original_width]
+    save_intensity(cropped_I_R_norm, "output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/reference_wave_intensity.png")
 
     # Propagate the zero-padded object wave
     propagated_object_wave = angular_spectrum_propagation(padded_object_wave, padded_width, padded_height, wavelength, z2, dx, dy, band_limit=band_limit)
@@ -121,6 +130,21 @@ def main():
     
     # Crop the hologram to the original size
     cropped_hologram_intensity = hologram_intensity[start_y:start_y+original_height, start_x:start_x+original_width]
+
+    # gt_amp = np.abs(object_wave)
+    # gt_phase = np.angle(object_wave)
+
+    # # gt_amp = gt_amp[start_y:start_y+original_height, start_x:start_x+original_width]
+    # # gt_phase = gt_phase[start_y:start_y+original_height, start_x:start_x+original_width]
+
+    # def norm01(x):
+    #     return (x - x.min()) / (x.max() - x.min() + 1e-12)
+    
+    # gt_amp = norm01(gt_amp)
+    # gt_phase = norm01(gt_phase) 
+
+    # save_intensity(gt_amp, f"output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/gt_amp.png")
+    # save_intensity(gt_phase, f"output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/gt_phase.png")
 
     output_filename = f"output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/hologram_intensity_Z1={z1}_dx={dx}_man.png"
     if not os.path.exists(os.path.dirname(output_filename)):
