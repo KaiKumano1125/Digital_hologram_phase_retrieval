@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"using device: {device}")
 
-#Total vairiation loss function
+#Total variation loss function
 def total_variation_loss_function(img):
     tv_h = torch.sum(torch.abs(img[:-1, :] - img[1:, :]))
     tv_w = torch.sum(torch.abs(img[:, :-1] - img[:, 1:]))
@@ -88,7 +88,7 @@ def main():
     parser.add_argument('--dy', type=float, default=5.0e-7, help='Pixel size in y direction in meters.')
     parser.add_argument('--pad_factor', type=int, default=2, help='Zero-padding factor.')
     parser.add_argument('--max_iter', type=int, default=20000, help='Maximum number of iterations.')
-    parser.add_argument('--output_dir', type=str, default='output_reconstruction', help='Directory to save output images.')
+    parser.add_argument('--outdir', type=str, default='output_reconstruction', help='Directory to save output images.')
     parser.add_argument('--tv_weight', type=float, default=1e-8, help='Weight for total variation loss.')
 
     args = parser.parse_args()
@@ -103,19 +103,19 @@ def main():
     max_iter = args.max_iter
     tv_weight = args.tv_weight
 
-    base_output_dir = args.output_dir
+    base_output_dir = args.outdir
     if not os.path.exists(base_output_dir):
         os.makedirs(base_output_dir)
     
     # Load the target hologram intensity (ground truth)
-    target_intensity_path = "C:\\Users\\Kai Kumano\\workspace\\Taiwan_phase_retrieval_algorithm\\taiwan_project\\scritps\\output_gabor\\target_gt\\asm\\hologram_intensity_Z1=0.05_dx=5e-07_man.png"
+    target_intensity_path = "../output/output_gabor/target_gt/asm/hologram_intensity_Z1=0.05_dx=5e-07_man.png"
     target_intensity = read_image(target_intensity_path)
     
     h, w = target_intensity.shape
     padded_height, padded_width = h * pad_factor, w * pad_factor
     
     # TensorBoard Setup
-    writer = SummaryWriter(log_dir=f'runs/asmV2_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
+    writer = SummaryWriter(log_dir=f'../runs/asmV2_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
     print(f"TensorBoard writer created at: {writer.log_dir}")
     
     # Pre-compute the angular spectrum transfer function

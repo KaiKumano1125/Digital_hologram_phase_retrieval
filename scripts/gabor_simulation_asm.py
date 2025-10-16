@@ -74,13 +74,11 @@ def create_phase_map(width, height, max_phase_rad):
     return phase_map
 
 
-
-
 def main():
     #simulation parameters
     wavelength = 500e-9  # 500 nm
-    z1 = 0.05            #distance from light source to object 
-    z2 = 0.002             #distance from object to hologram plane
+    z1 = 0.05            #distance from light source to object
+    z2 = 0.002           #distance from object to hologram plane
     dx = 5.0e-7
     dy = 5.0e-7
     pad_factor = 2
@@ -117,7 +115,7 @@ def main():
     I_R = np.abs(reference_wave_at_hologram)**2
     I_R_norm = I_R / np.max(I_R)
     cropped_I_R_norm = I_R_norm[start_y:start_y+original_height, start_x:start_x+original_width]
-    save_intensity(cropped_I_R_norm, "output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/reference_wave_intensity.png")
+    save_intensity(cropped_I_R_norm, "../output/output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/reference_wave_intensity.png")
 
     # Propagate the zero-padded object wave
     propagated_object_wave = angular_spectrum_propagation(padded_object_wave, padded_width, padded_height, wavelength, z2, dx, dy, band_limit=band_limit)
@@ -146,7 +144,7 @@ def main():
     # save_intensity(gt_amp, f"output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/gt_amp.png")
     # save_intensity(gt_phase, f"output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/gt_phase.png")
 
-    output_filename = f"output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/hologram_intensity_Z1={z1}_dx={dx}_man.png"
+    output_filename = f"../output/output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/hologram_intensity_Z1={z1}_dx={dx}_man.png"
     if not os.path.exists(os.path.dirname(output_filename)):
         os.makedirs(os.path.dirname(output_filename))
     save_intensity(cropped_hologram_intensity, output_filename)
