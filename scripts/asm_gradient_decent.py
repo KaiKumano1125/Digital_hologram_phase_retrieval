@@ -89,7 +89,7 @@ def main():
     parser.add_argument('--max_iter', type=int, default=20000, help='Maximum number of iterations.')
     parser.add_argument('--outdir', type=str, default='output_reconstruction', help='Directory to save output images.')
     parser.add_argument('--tv_weight', type=float, default=1e-8, help='Weight for total variation loss.')
-    parser.add_argument('--ref_weight', type=float, default=1.0e-3, help='Weight for reference loss.')
+    parser.add_argument('--ref_weight', type=float, default=0, help='Weight for reference loss.')
 
     args = parser.parse_args()
 
@@ -119,7 +119,7 @@ def main():
     padded_height, padded_width = h * pad_factor, w * pad_factor
     
     # TensorBoard Setup
-    writer = SummaryWriter(log_dir=f'../runs/ref_int_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
+    writer = SummaryWriter(log_dir=f'../runs/with_refv0_int_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
     print(f"TensorBoard writer created at: {writer.log_dir}")
     
     # Pre-compute the angular spectrum transfer function
@@ -128,7 +128,8 @@ def main():
     
     ## precompute reference wave at the hologram plane ##
     spherical_src = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2)
-    R_holo = angular_spectrum_prop(spherical_src, transfer_function_z1_z2, w, h)
+    reference_wave_at_hologram = angular_spectrum_prop(spherical_src, transfer_function_z1_z2, w, h)
+    R_holo = reference_wave_at_hologram.detach()
 
 
 
@@ -159,7 +160,7 @@ def main():
 
     start_time = time.time()
     total_time = 0.0
-    
+
     reference_intensity = True  # Whether to include reference intensity loss
 
     try:
@@ -181,8 +182,7 @@ def main():
             R_gamma = gamma_ref.to(torch.complex128) * R_holo
 
 
-            spherical_wave = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2)
-            reference_wave_at_hologram = angular_spectrum_prop(spherical_wave, transfer_function_z1_z2, w, h)
+            spherical_src = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2)
             total_wave = propagated_object_wave + R_gamma
 
             simulated_intensity = torch.abs(total_wave)**2
