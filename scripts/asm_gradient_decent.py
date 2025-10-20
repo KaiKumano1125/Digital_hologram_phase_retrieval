@@ -89,7 +89,7 @@ def main():
     parser.add_argument('--max_iter', type=int, default=20000, help='Maximum number of iterations.')
     parser.add_argument('--outdir', type=str, default='output_reconstruction', help='Directory to save output images.')
     parser.add_argument('--tv_weight', type=float, default=1e-8, help='Weight for total variation loss.')
-    parser.add_argument('--ref_weight', type=float, default=0, help='Weight for reference loss.')
+    parser.add_argument('--ref_weight', type=float, default=1e-3, help='Weight for reference loss.')
 
     args = parser.parse_args()
 
@@ -115,11 +115,20 @@ def main():
     target_intensity = read_image(target_intensity_path)
     I_ref = read_image(ref_intensity_path)
 
+    # Add noise to reference intensity
+    def add_noise(I_ref_tensor, noise_std=0.05):
+        noise=torch.randn_like(I_ref_tensor)*noise_std
+        noise_I_ref=I_ref_tensor + noise
+        return torch.clamp(noise_I_ref, 0.0, 1.0)
+    I_ref_noise= add_noise(I_ref, noise_std=0.05)
+    I_ref=I_ref_noise
+    
+    
     h, w = target_intensity.shape
     padded_height, padded_width = h * pad_factor, w * pad_factor
     
     # TensorBoard Setup
-    writer = SummaryWriter(log_dir=f'../runs/with_refv0_int_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
+    writer = SummaryWriter(log_dir=f'../runs/with_ref_noisev2_int_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
     print(f"TensorBoard writer created at: {writer.log_dir}")
     
     # Pre-compute the angular spectrum transfer function
@@ -196,7 +205,9 @@ def main():
             R_int = torch.abs(R_gamma)**2
             R_int_norm = R_int / (R_int.max() + 1e-9)
             I_ref_norm = I_ref / (I_ref.max() + 1e-9)
-            ref_loss = torch.nn.functional.mse_loss(R_int_norm, I_ref_norm)
+            # ref_loss = torch.nn.functional.mse_loss(R_int, I_ref)
+            ref_loss = torch.mean((torch.log1p(R_int + 1e-9) - torch.log1p(I_ref_noise + 1e-9)) ** 2)
+
 
 
             tv_amp = total_variation_loss_function(amp_param)
