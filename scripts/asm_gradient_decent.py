@@ -7,10 +7,16 @@ import argparse
 import cv2
 import time
 from torch.utils.tensorboard import SummaryWriter
+import yaml
 
 # The device to run the simulation on GPU if available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"using device: {device}")
+
+def load_config(path='config/config.yaml'):
+    with open(path, 'r') as f:
+        return yaml.safe_load(f)
+    return {}
 
 #Total variation loss function
 def total_variation_loss_function(img):
@@ -37,7 +43,7 @@ def save_Intensity(intensity_tensor, filename):
     # print(f"Image saved to {filename}")
 
 def angular_function(width, height, wavelength, z, dx, dy):
-    k = 2 * np.pi / wavelength
+    # k = 2 * np.pi / wavelength
     fy = torch.fft.fftfreq(height, d=dy, device=device)
     fx = torch.fft.fftfreq(width, d=dx, device=device)
     
@@ -78,49 +84,39 @@ def generate_spherical_reference_wave_tensor(width, height, wavelength, z):
 
 
 def main():
-    # Setup argument parser
-    parser = argparse.ArgumentParser(description="Fresnel phase retrieval simulation using gradient descent.")
-    parser.add_argument('--wavelength', type=float, default=500e-9, help='Wavelength in meters.')
-    parser.add_argument('--z1', type=float, default=0.05, help='Distance from light source to object in meters.')
-    parser.add_argument('--z2', type=float, default=0.002, help='Distance from object to hologram plane in meters.')
-    parser.add_argument('--dx', type=float, default=5.0e-7, help='Pixel size in x direction in meters.')
-    parser.add_argument('--dy', type=float, default=5.0e-7, help='Pixel size in y direction in meters.')
-    parser.add_argument('--pad_factor', type=int, default=2, help='Zero-padding factor.')
-    parser.add_argument('--max_iter', type=int, default=20000, help='Maximum number of iterations.')
-    parser.add_argument('--outdir', type=str, default='output_reconstruction', help='Directory to save output images.')
-    parser.add_argument('--tv_weight', type=float, default=1e-8, help='Weight for total variation loss.')
-    parser.add_argument('--ref_weight', type=float, default=1e-3, help='Weight for reference loss.')
-
-    args = parser.parse_args()
-
-    # Simulation parameters
-    wavelength = args.wavelength
-    z1 = args.z1
-    z2 = args.z2
-    dx = args.dx
-    dy = args.dy
-    pad_factor = args.pad_factor
-    max_iter = args.max_iter
-    tv_weight = args.tv_weight
-    ref_weight = args.ref_weight
-
-
-    base_output_dir = args.outdir
+    config = load_config("../scripts/config/config.yaml")
+    wavelength = float(config['wavelength'])
+    z1 = float(config['z1'])
+    z2 = float(config['z2'])
+    dx = float(config['dx'])
+    dy = float(config['dy'])
+    pad_factor = int(config['pad_factor'])
+    max_iter = int(config['max_iter'])
+    tv_weight = float(config['tv_weight'])
+    ref_weight = float(config['ref_weight'])
+    noise_std = float(config['noise_std'])
+    target_intensity_path = config['target_intensity_path']
+    ref_intensity_path = config['ref_intensity_path']
+    base_output_dir = config['outdir']
+    log_dir_prefix = config['log_dir_prefix']
+    
+    
+    base_output_dir = base_output_dir
     if not os.path.exists(base_output_dir):
         os.makedirs(base_output_dir)
     
     # Load the target hologram intensity (ground truth)
-    target_intensity_path = "../output/output_gabor/target_gt/asm/hologram_intensity_Z1=0.05_dx=5e-07_man.png"
-    ref_intensity_path = "../output/output_gabor/target_gt/asm/I_R.png" 
+    target_intensity_path = target_intensity_path
+    ref_intensity_path = ref_intensity_path
     target_intensity = read_image(target_intensity_path)
     I_ref = read_image(ref_intensity_path)
 
     # Add noise to reference intensity
-    def add_noise(I_ref_tensor, noise_std=0.05):
+    def add_noise(I_ref_tensor, noise_std=noise_std):
         noise=torch.randn_like(I_ref_tensor)*noise_std
         noise_I_ref=I_ref_tensor + noise
         return torch.clamp(noise_I_ref, 0.0, 1.0)
-    I_ref_noise= add_noise(I_ref, noise_std=0.05)
+    I_ref_noise= add_noise(I_ref, noise_std=noise_std)
     I_ref=I_ref_noise
     
     
@@ -128,7 +124,7 @@ def main():
     padded_height, padded_width = h * pad_factor, w * pad_factor
     
     # TensorBoard Setup
-    writer = SummaryWriter(log_dir=f'../runs/with_ref_noisev2_int_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
+    writer = SummaryWriter(log_dir=f'{log_dir_prefix}_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
     print(f"TensorBoard writer created at: {writer.log_dir}")
     
     # Pre-compute the angular spectrum transfer function

@@ -1,0 +1,16 @@
+# config.yaml
+
+wavelength: 500e-9
+z1 : 0.05
+z2 : 0.002
+dx: 5.0e-7
+dy: 5.0e-7
+pad_factor: 2
+max_iter: 20000
+tv_weight: 1e-8
+ref_weight: 1e-3
+noise_std : 0.05
+ref_intensity_path: "../output/output_gabor/target_gt/asm/I_R.png"
+target_intensity_path: "../output/output_gabor/target_gt/asm/hologram_intensity_Z1=0.05_dx=5e-07_man.png"
+outdir: "../output/output_reconstruction/test"
+log_dir_prefix: "../runs/with_ref_noisev2_int"
