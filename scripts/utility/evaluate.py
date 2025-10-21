@@ -35,9 +35,9 @@ if __name__ == "__main__":
     # out1_path = r"C:\Users\Kai Kumano\workspace\Phase_retrieval_algorithm\output\output_reconstruction\reference_constraint\final_s_plane_int.png"
     # out2_path = r"C:\Users\Kai Kumano\workspace\Phase_retrieval_algorithm\output\output_reconstruction\without_reference_constraint\final_s_plane_int_without.png"
 
-    gt_path  = r"C:\Users\Kai Kumano\workspace\Phase_retrieval_algorithm\output\output_gabor\target_gt\asm\hologram_intensity_Z1=0.05_dx=5e-07_man.png"
-    ref_path = r"C:\Users\Kai Kumano\workspace\Phase_retrieval_algorithm\output\output_reconstruction\reference_constraint\final_sim_hologram_int.png"
-    without_path = r"C:\Users\Kai Kumano\workspace\Phase_retrieval_algorithm\output\output_reconstruction\without_reference_constraint\final_sim_hologram_int.png"
+    gt_path  = r"C:\Users\Kai Kumano\workspace\Phase_retrieval_algorithm\output\output_gabor\target_gt\cell\phase_cells.png"
+    ref_path = r"C:\Users\Kai Kumano\workspace\Phase_retrieval_algorithm\output\output_reconstruction\cell\final_s_plane_phs.png"
+    without_path = r"C:\Users\Kai Kumano\workspace\Phase_retrieval_algorithm\output\output_reconstruction\cell\final_s_plane_phs_without.png"
 
 
     evaluate_metrics(gt_path, ref_path, without_path)
