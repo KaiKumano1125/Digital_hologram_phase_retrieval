@@ -36,6 +36,24 @@ def generate_reference_wave(width, height, wavelength, z):
     wave = np.exp(1j * k * r) / r
     return wave
 
+def generate_two_point_sources(width, height, wavelength, z, offset=100):
+    k = 2 * np.pi / wavelength
+    cx , cy = width // 2.0 , height // 2.0
+    x = np.arange(width) - cx
+    y = np.arange(height) - cy
+    x, y = np.meshgrid(x,y)
+
+    r1_sq = (x - offset)**2 + y**2 + z**2
+    r2_sq = (x + offset)**2 + y**2 + z**2
+    r1 = np.sqrt(r1_sq)
+    r2 = np.sqrt(r2_sq)
+
+    wave1 = np.exp(1j * k * r1) / r1
+    wave2 = np.exp(1j * k * r2) / r2
+
+    wave = wave1 + wave2
+    return wave
+
 # angular spectrum method
 def angular_spectrum_propagation(input_wave, width, height, wavelength, z, dx, dy, band_limit=False):
     angular_spectrum = fft2(input_wave)
@@ -78,24 +96,27 @@ def main():
     #simulation parameters
     wavelength = 500e-9  # 500 nm
     z1 = 0.05            #distance from light source to object
-    z2 = 0.002           #distance from object to hologram plane
+    z2 = 0.001           #distance from object to hologram plane
     dx = 5.0e-7
     dy = 5.0e-7
     pad_factor = 2
     band_limit = True
 
     # input file
-    object_filename = "input/Man.bmp"
-    if object_filename is None:
-        raise FileNotFoundError(f"Image file '{object_filename}' not found.")
+    # object_filename = "input/cell/phase_cells_v2.png"
+    # if object_filename is None:
+    #     raise FileNotFoundError(f"Image file '{object_filename}' not found.")
 
-    try:
-        original_image = read_image(object_filename)
-    except FileNotFoundError as e :
-        print(e)
-        return
+    # try:
+    #     original_image = read_image(object_filename)
+    # except FileNotFoundError as e :
+    #     print(e)
+    #     return
     
-    original_height, original_width = original_image.shape
+    amp_image = read_image("../input/cell/amp_cells_v2.png")
+    phase_image = read_image("../input/cell/phase_cells_v2.png")
+
+    original_height, original_width = amp_image.shape
     padded_height, padded_width = original_height * pad_factor, original_width * pad_factor
 
     # Create a zero-padded object wave
@@ -104,8 +125,10 @@ def main():
 
     start_y, start_x = (padded_height - original_height) // 2, (padded_width - original_width) // 2
     
-    phase_map = create_phase_map(original_width, original_height, np.pi / 2)
-    object_wave = original_image * np.exp(1j * phase_map)
+    
+    phase_radians = (phase_image * 2 * np.pi)  # assuming input normalized to [0,1]
+    object_wave = amp_image * np.exp(1j * phase_radians)
+
     padded_object_wave[start_y:start_y+original_height, start_x:start_x+original_width] = object_wave
 
     # Generate and propagate the spherical reference wave
@@ -115,7 +138,7 @@ def main():
     I_R = np.abs(reference_wave_at_hologram)**2
     I_R_norm = I_R / np.max(I_R)
     cropped_I_R_norm = I_R_norm[start_y:start_y+original_height, start_x:start_x+original_width]
-    save_intensity(cropped_I_R_norm, "../output/output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/reference_wave_intensity.png")
+    save_intensity(cropped_I_R_norm, "../output/output_gabor/cell_original/reference_wave_intensity.png")
 
     # Propagate the zero-padded object wave
     propagated_object_wave = angular_spectrum_propagation(padded_object_wave, padded_width, padded_height, wavelength, z2, dx, dy, band_limit=band_limit)
@@ -144,7 +167,7 @@ def main():
     # save_intensity(gt_amp, f"output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/gt_amp.png")
     # save_intensity(gt_phase, f"output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/gt_phase.png")
 
-    output_filename = f"../output/output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/hologram_intensity_Z1={z1}_dx={dx}_man.png"
+    output_filename = f"../output/output_gabor/cell_original/hologram_intensity_Z1={z1}_dx={dx}_cell.png"
     if not os.path.exists(os.path.dirname(output_filename)):
         os.makedirs(os.path.dirname(output_filename))
     save_intensity(cropped_hologram_intensity, output_filename)
