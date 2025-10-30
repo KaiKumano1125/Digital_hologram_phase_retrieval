@@ -2,7 +2,7 @@
 
 wavelength: 500e-9
 z1 : 0.05
-z2 : 0.002
+z2 : 0.001
 dx: 5.0e-7
 dy: 5.0e-7
 pad_factor: 2
@@ -10,7 +10,9 @@ max_iter: 20000
 tv_weight: 1e-8
 ref_weight: 1e-3
 noise_std : 0.05
-ref_intensity_path: "../output/output_gabor/target_gt/asm/I_R.png"
-target_intensity_path: "../output/output_gabor/target_gt/asm/hologram_intensity_Z1=0.05_dx=5e-07_man.png"
-outdir: "../output/output_reconstruction/test"
-log_dir_prefix: "../runs/with_ref_noisev2_int"
+reference_type: "two_point"  # or "spherical"
+offset: 150
+ref_intensity_path: "../output/output_gabor/target_gt/cell/cell_I_R_2.png"
+target_intensity_path: "../output/output_gabor/target_gt/cell/hologram_intensity_2point.png"
+outdir: "../output/output_reconstruction/original_cell_ref2_int"
+log_dir_prefix: "../runs/original_cell_ref2_int"

@@ -83,6 +83,25 @@ def generate_spherical_reference_wave_tensor(width, height, wavelength, z):
     return wave.to(torch.complex128)
 
 
+def generate_two_point_sources_tensor(width, height, wavelength, z, offset=100):
+    k = 2 * np.pi / wavelength
+    cx, cy = width // 2, height // 2
+    x = (torch.arange(width, device=device) - cx)
+    y = (torch.arange(height, device=device) - cy)
+    x, y = torch.meshgrid(x, y, indexing='ij')
+
+    r1_sq = (x - offset)**2 + y**2 + z**2
+    r2_sq = (x + offset)**2 + y**2 + z**2
+    r1 = torch.sqrt(r1_sq)
+    r2 = torch.sqrt(r2_sq)
+
+    wave1 = torch.exp(1j * k * r1) / r1
+    wave2 = torch.exp(1j * k * r2) / r2
+
+    return (wave1 + wave2).to(torch.complex128)
+
+
+
 def main():
     config = load_config("../scripts/config/config.yaml")
     wavelength = float(config['wavelength'])
@@ -132,7 +151,13 @@ def main():
     transfer_function_z1_z2 = angular_function(padded_width, padded_height, wavelength, z1 + z2, dx, dy)
     
     ## precompute reference wave at the hologram plane ##
-    spherical_src = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2)
+
+    
+    if config.get('reference_type', 'spherical') == 'two_point':
+        spherical_src = generate_two_point_sources_tensor(padded_width, padded_height, wavelength, z1 + z2, config.get('offset', 100))
+    else:
+        spherical_src = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2)
+
     reference_wave_at_hologram = angular_spectrum_prop(spherical_src, transfer_function_z1_z2, w, h)
     R_holo = reference_wave_at_hologram.detach()
 
@@ -186,8 +211,14 @@ def main():
             ## reference wave with learning gamma ##
             R_gamma = gamma_ref.to(torch.complex128) * R_holo
 
+            reference_type = config.get('reference_type', 'spherical')
+            offset = int(config.get('offset', 150))
 
-            spherical_src = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2)
+            if reference_type == 'two_point':
+                spherical_src = generate_two_point_sources_tensor(padded_width, padded_height, wavelength, z1 + z2, offset)
+            else:
+                spherical_src = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2)
+
             total_wave = propagated_object_wave + R_gamma
 
             simulated_intensity = torch.abs(total_wave)**2
