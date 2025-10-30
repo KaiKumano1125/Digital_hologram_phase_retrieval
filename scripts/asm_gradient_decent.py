@@ -1,5 +1,4 @@
 # This code executes the gradient descent algorithm based on the Angular spectrum method.
-#test to merge kumano 
 import numpy as np
 import torch
 from torch.fft import fft2, ifft2, fftshift

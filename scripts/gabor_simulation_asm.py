@@ -132,13 +132,13 @@ def main():
     padded_object_wave[start_y:start_y+original_height, start_x:start_x+original_width] = object_wave
 
     # Generate and propagate the spherical reference wave
-    spherical_wave = generate_reference_wave(padded_width, padded_height, wavelength, z1)
+    spherical_wave = generate_two_point_sources(padded_width, padded_height, wavelength, z1, offset=150)
     reference_wave_at_hologram = angular_spectrum_propagation(spherical_wave, padded_width, padded_height, wavelength, z1 + z2, dx, dy, band_limit=band_limit)
     #save reference wave intensity
     I_R = np.abs(reference_wave_at_hologram)**2
     I_R_norm = I_R / np.max(I_R)
     cropped_I_R_norm = I_R_norm[start_y:start_y+original_height, start_x:start_x+original_width]
-    save_intensity(cropped_I_R_norm, "../output/output_gabor/cell_original/reference_wave_intensity.png")
+    save_intensity(cropped_I_R_norm, "../output/output_gabor/cell_original/2reference_wave_intensity.png")
 
     # Propagate the zero-padded object wave
     propagated_object_wave = angular_spectrum_propagation(padded_object_wave, padded_width, padded_height, wavelength, z2, dx, dy, band_limit=band_limit)
@@ -167,7 +167,7 @@ def main():
     # save_intensity(gt_amp, f"output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/gt_amp.png")
     # save_intensity(gt_phase, f"output_gabor/ASM/with_bl/z2=0.002m/z1=0.05m/gt_phase.png")
 
-    output_filename = f"../output/output_gabor/cell_original/hologram_intensity_Z1={z1}_dx={dx}_cell.png"
+    output_filename = f"../output/output_gabor/cell_original/2hologram_intensity_Z1={z1}_dx={dx}_cell.png"
     if not os.path.exists(os.path.dirname(output_filename)):
         os.makedirs(os.path.dirname(output_filename))
     save_intensity(cropped_hologram_intensity, output_filename)
