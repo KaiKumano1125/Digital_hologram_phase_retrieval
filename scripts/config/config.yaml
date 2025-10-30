@@ -1,8 +1,8 @@
 # config.yaml
 
 wavelength: 500e-9
-z1 : 0.05
-z2 : 0.001
+z1 : 0.005
+z2 : 0.0002
 dx: 5.0e-7
 dy: 5.0e-7
 pad_factor: 2
@@ -12,7 +12,7 @@ ref_weight: 1e-3
 noise_std : 0.05
 reference_type: "two_point"  # or "spherical"
 offset: 150
-ref_intensity_path: "../output/output_gabor/target_gt/cell/cell_I_R_2.png"
-target_intensity_path: "../output/output_gabor/target_gt/cell/hologram_intensity_2point.png"
-outdir: "../output/output_reconstruction/original_cell_ref2_int"
-log_dir_prefix: "../runs/original_cell_ref2_int"
+ref_intensity_path: "../output/output_gabor/target_gt/cell/int_3.png"
+target_intensity_path: "../output/output_gabor/target_gt/cell/holo_cell_3.png"
+outdir: "../output/output_reconstruction/original_cell_ref3_int"
+log_dir_prefix: "../runs/original_cell_ref3_int"
