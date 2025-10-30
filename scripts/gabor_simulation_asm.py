@@ -132,6 +132,8 @@ def main():
     padded_object_wave[start_y:start_y+original_height, start_x:start_x+original_width] = object_wave
 
     # Generate and propagate the spherical reference wave
+    #if you want to use two point sources as reference wave, uncomment the following line and comment the next line
+    #spherical_wave = generate_spherical_reference_wave(padded_width, padded_height, wavelength
     spherical_wave = generate_two_point_sources(padded_width, padded_height, wavelength, z1, offset=150)
     reference_wave_at_hologram = angular_spectrum_propagation(spherical_wave, padded_width, padded_height, wavelength, z1 + z2, dx, dy, band_limit=band_limit)
     #save reference wave intensity
