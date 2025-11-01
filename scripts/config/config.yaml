@@ -12,7 +12,7 @@ ref_weight: 1e-3
 noise_std : 0.05
 reference_type: "two_point"  # or "spherical"
 offset: 150
-ref_intensity_path: "../output/output_gabor/target_gt/cell/int_3.png"
-target_intensity_path: "../output/output_gabor/target_gt/cell/holo_cell_3.png"
-outdir: "../output/output_reconstruction/original_cell_ref3_int"
-log_dir_prefix: "../runs/original_cell_ref3_int"
+ref_intensity_path: "../output/output_gabor/target_gt/cell/ref_int_1light.png"
+target_intensity_path: "../output/output_gabor/target_gt/cell/holo_int_1light.png"
+outdir: "../output/output_reconstruction/original_cell_ref_int_1light"
+log_dir_prefix: "../runs/original_cell_ref_int_1light"
