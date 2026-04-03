@@ -1,16 +1,16 @@
 # This code executes the gradient descent algorithm based on the Angular spectrum method.
 import numpy as np
 import torch
-from torch.fft import fft2, ifft2, fftshift
+from torch.fft import fft2, ifft2
 import os
-import argparse
-import cv2
 import time
 from torch.utils.tensorboard import SummaryWriter
 import yaml
+from utility.optics_torch import (
+    device, read_image, save_intensity, total_variation_loss_function,
+    generate_spherical_reference_wave_tensor, generate_two_point_sources_tensor
+)
 
-# The device to run the simulation on GPU if available
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"using device: {device}")
 
 def load_config(path='config/config.yaml'):
@@ -18,36 +18,12 @@ def load_config(path='config/config.yaml'):
         return yaml.safe_load(f)
     return {}
 
-#Total variation loss function
-def total_variation_loss_function(img):
-    tv_h = torch.sum(torch.abs(img[:-1, :] - img[1:, :]))
-    tv_w = torch.sum(torch.abs(img[:, :-1] - img[:, 1:]))
-    return tv_h + tv_w
-
-def read_image(filename):
-    img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        raise FileNotFoundError(f"Image file '{filename}' not found.")
-    normalized_img = img.astype(np.float64) / 255.0
-    return torch.tensor(normalized_img, dtype=torch.float64, device=device)
-
-def save_Intensity(intensity_tensor, filename):
-    intensity_array = intensity_tensor.detach().cpu().numpy()
-    max_val = np.max(intensity_array)
-    if max_val > 0:
-        normalized_intensity = (intensity_array / max_val) * 255.0
-    else:
-        normalized_intensity = np.zeros_like(intensity_array)
-    output_img = normalized_intensity.astype(np.uint8)
-    cv2.imwrite(filename, output_img)
-    # print(f"Image saved to {filename}")
 
 def angular_function(width, height, wavelength, z, dx, dy):
-    # k = 2 * np.pi / wavelength
     fy = torch.fft.fftfreq(height, d=dy, device=device)
     fx = torch.fft.fftfreq(width, d=dx, device=device)
-    
-    fy,fx = torch.meshgrid(fy, fx, indexing='ij')
+
+    fy, fx = torch.meshgrid(fy, fx, indexing='ij')
 
     prop_mask = ((wavelength * fx)**2 + (wavelength * fy)**2 <= 1.0)
 
@@ -66,42 +42,6 @@ def angular_spectrum_prop(input_wave, transfer_function, cropped_width, cropped_
     return propagated_wave[start_y:start_y+cropped_height, start_x:start_x+cropped_width]
 
 
-def generate_spherical_reference_wave_tensor(width, height, wavelength, z):
-    k = 2 * np.pi / wavelength
-    cx, cy = width // 2, height // 2
-    x = (torch.arange(width, device=device) - cx) 
-    y = (torch.arange(height, device=device) - cy) 
-    x, y = torch.meshgrid(x, y, indexing='ij')
-
-    r_sq = x**2 + y**2 + z**2
-    r = torch.sqrt(r_sq)
-
-    # Avoid division by zero
-    r = torch.where(r == 0, torch.tensor(1e-9, dtype=torch.float64, device=device), r)
-
-    wave = torch.exp(1j * k * r) / r
-    return wave.to(torch.complex128)
-
-
-def generate_two_point_sources_tensor(width, height, wavelength, z, offset=100):
-    k = 2 * np.pi / wavelength
-    cx, cy = width // 2, height // 2
-    x = (torch.arange(width, device=device) - cx)
-    y = (torch.arange(height, device=device) - cy)
-    x, y = torch.meshgrid(x, y, indexing='ij')
-
-    r1_sq = (x - offset)**2 + y**2 + z**2
-    r2_sq = (x + offset)**2 + y**2 + z**2
-    r1 = torch.sqrt(r1_sq)
-    r2 = torch.sqrt(r2_sq)
-
-    wave1 = torch.exp(1j * k * r1) / r1
-    wave2 = torch.exp(1j * k * r2) / r2
-
-    return (wave1 + wave2).to(torch.complex128)
-
-
-
 def main():
     config = load_config("../scripts/config/config.yaml")
     wavelength = float(config['wavelength'])
@@ -118,41 +58,29 @@ def main():
     ref_intensity_path = config['ref_intensity_path']
     base_output_dir = config['outdir']
     log_dir_prefix = config['log_dir_prefix']
-    
-    
-    base_output_dir = base_output_dir
+
     if not os.path.exists(base_output_dir):
         os.makedirs(base_output_dir)
-    
-    # Load the target hologram intensity (ground truth)
-    target_intensity_path = target_intensity_path
-    ref_intensity_path = ref_intensity_path
+
     target_intensity = read_image(target_intensity_path)
     I_ref = read_image(ref_intensity_path)
 
-    # Add noise to reference intensity
     def add_noise(I_ref_tensor, noise_std=noise_std):
-        noise=torch.randn_like(I_ref_tensor)*noise_std
-        noise_I_ref=I_ref_tensor + noise
+        noise = torch.randn_like(I_ref_tensor) * noise_std
+        noise_I_ref = I_ref_tensor + noise
         return torch.clamp(noise_I_ref, 0.0, 1.0)
-    I_ref_noise= add_noise(I_ref, noise_std=noise_std)
-    I_ref=I_ref_noise
-    
-    
+    I_ref_noise = add_noise(I_ref, noise_std=noise_std)
+    I_ref = I_ref_noise
+
     h, w = target_intensity.shape
     padded_height, padded_width = h * pad_factor, w * pad_factor
-    
-    # TensorBoard Setup
+
     writer = SummaryWriter(log_dir=f'{log_dir_prefix}_z1={z1}_tvloss_weight={tv_weight}_maxiter={max_iter}')
     print(f"TensorBoard writer created at: {writer.log_dir}")
-    
-    # Pre-compute the angular spectrum transfer function
+
     transfer_function_z2 = angular_function(padded_width, padded_height, wavelength, z2, dx, dy)
     transfer_function_z1_z2 = angular_function(padded_width, padded_height, wavelength, z1 + z2, dx, dy)
-    
-    ## precompute reference wave at the hologram plane ##
 
-    
     if config.get('reference_type', 'spherical') == 'two_point':
         spherical_src = generate_two_point_sources_tensor(padded_width, padded_height, wavelength, z1 + z2, config.get('offset', 100))
     else:
@@ -161,18 +89,10 @@ def main():
     reference_wave_at_hologram = angular_spectrum_prop(spherical_src, transfer_function_z1_z2, w, h)
     R_holo = reference_wave_at_hologram.detach()
 
+    amp_param = torch.ones((h, w), dtype=torch.float64, device=device, requires_grad=True)
+    phase_param = torch.rand((h, w), dtype=torch.float64, device=device, requires_grad=True)
 
-
-    # Pre-compute the FFT of the impulse response
-    # impulse_response_h = create_fresnel_impulse_response(padded_width, padded_height, wavelength, z2, dx, dy)
-    # fft_impulse_response = fft2(impulse_response_h)
-    
-    # Unknown object amplitude "s"
-    # s = torch.ones((h, w), dtype=torch.float64, requires_grad=True, device=device)
-    amp_param = torch.ones((h,w), dtype=torch.float64, device=device, requires_grad=True)
-    phase_param = torch.rand((h,w), dtype=torch.float64, device=device, requires_grad=True) 
-
-    save_Intensity(amp_param, os.path.join(base_output_dir, "initial_s.png"))
+    save_intensity(amp_param, os.path.join(base_output_dir, "initial_s.png"))
 
     ## Known object's phase ##
     k = 2 * np.pi / wavelength
@@ -182,60 +102,40 @@ def main():
     x, y = torch.meshgrid(x_coords, y_coords, indexing='ij')
     r_sq = x**2 + y**2
     known_phase = torch.exp(1j * k / (2 * z1) * r_sq).to(torch.complex128)
-    save_Intensity(torch.angle(known_phase), os.path.join(base_output_dir, "known_phase.png"))
+    save_intensity(torch.angle(known_phase), os.path.join(base_output_dir, "known_phase.png"))
 
-    ## Optimizer(Adam) ##
     gamma_ref = torch.tensor(1.0, dtype=torch.float64, device=device, requires_grad=True)
     optimizer = torch.optim.Adam([amp_param, phase_param, gamma_ref], lr=1e-3)
 
     start_time = time.time()
     total_time = 0.0
 
-    reference_intensity = True  # Whether to include reference intensity loss
+    reference_intensity = True
 
     try:
         for i in range(max_iter):
             iter_start_time = time.time()
 
             object_wave_complex = (amp_param * torch.exp(1j * phase_param)).to(torch.complex128)
-            # object_wave_complex = s.to(torch.complex128) * known_phase
 
-            ## Pad to larger grid ##
             padded_object_wave = torch.zeros((padded_height, padded_width), dtype=torch.complex128, device=device)
             start_y = padded_height // 2 - h // 2
             start_x = padded_width // 2 - w // 2
             padded_object_wave[start_y:start_y+h, start_x:start_x+w] = object_wave_complex
 
-            ## Propagation ##
             propagated_object_wave = angular_spectrum_prop(padded_object_wave, transfer_function_z2, w, h)
-            ## reference wave with learning gamma ##
             R_gamma = gamma_ref.to(torch.complex128) * R_holo
-
-            reference_type = config.get('reference_type', 'spherical')
-            offset = int(config.get('offset', 150))
-
-            if reference_type == 'two_point':
-                spherical_src = generate_two_point_sources_tensor(padded_width, padded_height, wavelength, z1 + z2, offset)
-            else:
-                spherical_src = generate_spherical_reference_wave_tensor(padded_width, padded_height, wavelength, z1 + z2)
 
             total_wave = propagated_object_wave + R_gamma
 
             simulated_intensity = torch.abs(total_wave)**2
 
-            ## Loss (MSE) ##
             sim_norm = simulated_intensity / (simulated_intensity.max() + 1e-9)
             tgt_norm = target_intensity / (target_intensity.max() + 1e-9)
             mse_loss = torch.nn.functional.mse_loss(sim_norm, tgt_norm)
 
-            ## Reference intensity loss ##
             R_int = torch.abs(R_gamma)**2
-            R_int_norm = R_int / (R_int.max() + 1e-9)
-            I_ref_norm = I_ref / (I_ref.max() + 1e-9)
-            # ref_loss = torch.nn.functional.mse_loss(R_int, I_ref)
             ref_loss = torch.mean((torch.log1p(R_int + 1e-9) - torch.log1p(I_ref_noise + 1e-9)) ** 2)
-
-
 
             tv_amp = total_variation_loss_function(amp_param)
             tv_phase = total_variation_loss_function(phase_param)
@@ -244,105 +144,63 @@ def main():
                 loss = mse_loss + tv_weight * (tv_amp + tv_phase) + ref_weight * ref_loss
             else:
                 loss = mse_loss + tv_weight * (tv_amp + tv_phase)
-            # loss = torch.nn.functional.mse_loss(sim_norm, tgt_norm)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            
+
             iter_end_time = time.time()
             iter_duration = iter_end_time - iter_start_time
             total_time += iter_duration
 
-            ## Logging and saving only every 50 iterations ##
             if (i + 1) % 50 == 0:
-                # print(f"Iteration {i+1}, Loss: {loss.item():.6e}")
-                # writer.add_scalar('Loss', loss.item(), i)
-                # writer.add_scalar('Performance/Time_Iteration', iter_duration, i)
                 print(f"Iteration {i+1}, MSE_Loss: {mse_loss.item():.6e}, TV_Loss: {tv_amp.item():.6e}, Total_Loss: {loss.item():.6e}")
                 writer.add_scalar('Loss/MSE', mse_loss.item(), i)
                 writer.add_scalar('Loss/TV', tv_amp.item(), i)
                 writer.add_scalar('Performance/Time_Iteration', iter_duration, i)
                 writer.add_scalar('Loss/Reference', ref_loss.item(), i)
 
-
                 if device.type == 'cuda':
                     gpu_mem_allocate = torch.cuda.memory_allocated(device) / (1024 ** 2)
                     writer.add_scalar('Performance/GPU_Memory_Allocated_MB', gpu_mem_allocate, i)
-
                     cached_mem = torch.cuda.memory_reserved(device) / (1024 ** 2)
                     writer.add_scalar('Performance/GPU_Memory_Cached_MB', cached_mem, i)
                 print(f"Time for iteration {i+1}: {iter_duration:.4f} sec, Total time: {total_time:.2f} sec")
 
-                # Save reconstructed amplitude (for TensorBoard)
-                save_Intensity(amp_param, os.path.join(base_output_dir, "reconstructed_amplitude_progress.png"))
+                save_intensity(amp_param, os.path.join(base_output_dir, "reconstructed_amplitude_progress.png"))
                 amp_normalized = amp_param.detach().cpu().numpy()
                 writer.add_image('Reconstructed Amplitude(a)', torch.tensor(amp_normalized, dtype=torch.float32).unsqueeze(0), i)
-                # Save reconstructed phase (for TensorBoard)
-                save_Intensity(phase_param, os.path.join(base_output_dir, "reconstructed_phase_progress.png"))
+
+                save_intensity(phase_param, os.path.join(base_output_dir, "reconstructed_phase_progress.png"))
                 phase_normalized = (phase_param.detach().cpu().numpy() + np.pi) / (2 * np.pi)
                 writer.add_image('Reconstructed Phase(phi)', torch.tensor(phase_normalized, dtype=torch.float32).unsqueeze(0), i)
-
-                complex_field_tensor = (amp_param.detach() * torch.exp(1j * phase_param.detach()))
-                complex_field_np = complex_field_tensor.cpu().numpy()
-                # np.save(os.path.join(base_output_dir, "reconstructed_complex_field.npy"), complex_field_np)
-
-                # max_val = np.max(s_normalized)
-                # if max_val > 0:
-                #     s_normalized = s_normalized / max_val
-                # s_tensor = torch.tensor(s_normalized, dtype=torch.float32).unsqueeze(0)
-                # writer.add_image('Reconstructed Amplitude(s)', s_tensor, i)
-
-                # Save checkpoint outputs
-                # if not os.path.exists("output_reconstruction/Adam_randoms_z1=0.5"):
-                #     os.makedirs("output_reconstruction/Adam_randoms_z1=0.5")
-                # save_Intensity(s, os.path.join(base_output_dir, "reconstructed_s_progress.png"))
-                # save_Intensity(simulated_intensity, os.path.join(base_output_dir, "simulated_hologram_intensity_progress.png"))
-                # --- END CHECKPOINT SAVE ---
 
     except KeyboardInterrupt:
         print("Training interrupted. Saving latest results...")
 
     total_time = time.time() - start_time
     print(f"Total time for {max_iter} iterations: {total_time:.2f} sec, Average time per iteration: {total_time / max_iter:.4f} sec")
-    
 
-    # Final save after loop
     final_complex = amp_param * torch.exp(1j * phase_param)
 
     amp_final = final_complex.abs()
-    save_Intensity(amp_final, os.path.join(base_output_dir, "final_s_plane_amp.png"))
+    save_intensity(amp_final, os.path.join(base_output_dir, "final_s_plane_amp.png"))
 
     phase_final = torch.angle(final_complex)
-    save_Intensity(phase_final, os.path.join(base_output_dir, "final_s_plane_phs.png"))
+    save_intensity(phase_final, os.path.join(base_output_dir, "final_s_plane_phs.png"))
 
     intensity_final = torch.abs(final_complex)**2
-    save_Intensity(intensity_final, os.path.join(base_output_dir, "final_s_plane_int.png"))
-    
+    save_intensity(intensity_final, os.path.join(base_output_dir, "final_s_plane_int.png"))
+
     padded_final = torch.zeros((padded_height, padded_width), dtype=torch.complex128, device=device)
     padded_final[start_y:start_y+h, start_x:start_x+w] = final_complex.to(torch.complex128)
     final_prop = angular_spectrum_prop(padded_final, transfer_function_z2, w, h)
     R_gamma_final = gamma_ref.detach().to(torch.complex128) * R_holo
     total_final = final_prop + R_gamma_final
     final_holo_intensity = torch.abs(total_final)**2
-    save_Intensity(final_holo_intensity, os.path.join(base_output_dir, "final_sim_hologram_int.png"))
+    save_intensity(final_holo_intensity, os.path.join(base_output_dir, "final_sim_hologram_int.png"))
 
-    # final_s_plane_phase = torch.angle(final_s_plane_wave)
-    # normalized_phase = (final_s_plane_phase + np.pi) / (2 * np.pi)
-    # phase_array = normalized_phase.detach().cpu().numpy()
-    
-    # output_phase_filename = os.path.join(base_output_dir, "final_s_plane_phase.png")
-    # cv2.imwrite(output_phase_filename, (phase_array * 255).astype(np.uint8))
-
-    # final_complex_np = final_complex.detach().cpu().numpy()
-    # np.save(os.path.join(base_output_dir, "final_s_plane_complex.npy"), final_complex_np)
-    
     print(f"Final s-plane phase information saved")
-    
-    # 2. Save reconstructed amplitude and simulated hologram (.png)
-    # save_Intensity(s, os.path.join(base_output_dir, "reconstructed_s.png"))
-    # save_Intensity(simulated_intensity, os.path.join(base_output_dir, "simulated_hologram_intensity.png"))
-
     print("Reconstruction complete.")
     writer.close()
 

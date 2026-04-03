@@ -8,9 +8,9 @@ dy: 5.0e-7
 pad_factor: 2
 max_iter: 20000
 tv_weight: 1e-8
-ref_weight: 1e-3
+ref_weight: 0
 noise_std : 0.05
-reference_type: "two_point"  # or "spherical"
+reference_type: "spherical"  # or "spherical"
 offset: 150
 ref_intensity_path: "../output/output_gabor/target_gt/cell/ref_int_1light.png"
 target_intensity_path: "../output/output_gabor/target_gt/cell/holo_int_1light.png"
