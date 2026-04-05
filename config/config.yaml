@@ -1,0 +1,44 @@
+# Holographic phase retrieval — unified configuration
+# Used by both simulate.py and reconstruct.py
+
+# ---------------------------------------------------------------------------
+# Optical parameters
+# ---------------------------------------------------------------------------
+wavelength: 500.0e-9   # metres (500 nm green laser)
+z1: 0.005              # metres — source-to-object distance
+z2: 0.0002             # metres — object-to-hologram distance
+dx: 5.0e-7             # metres — pixel pitch (x)
+dy: 5.0e-7             # metres — pixel pitch (y)
+
+# ---------------------------------------------------------------------------
+# Reference wave
+# ---------------------------------------------------------------------------
+reference_type: spherical   # 'spherical' | 'two_point'
+offset: 150                 # pixel offset for two_point mode (ignored otherwise)
+
+# ---------------------------------------------------------------------------
+# Propagation mode
+# ---------------------------------------------------------------------------
+mode: ASM   # 'ASM' | 'fresnel'
+
+# ---------------------------------------------------------------------------
+# Simulation (simulate.py / GaborSimulator)
+# ---------------------------------------------------------------------------
+pad_factor: 2
+amp_path: ../input/cell/amp_cells_v2.png
+phase_path: ../input/cell/phase_cell.png
+
+# ---------------------------------------------------------------------------
+# Reconstruction (reconstruct.py / ReconstructionLoop)
+# ---------------------------------------------------------------------------
+max_iter: 20000
+tv_weight: 1.0e-8
+ref_weight: 0.0
+noise_std: 0.05
+learning_rate: 1.0e-3
+log_interval: 50
+
+target_intensity_path: ../output/output_gabor/target_gt/cell/holo_int_1light.png
+ref_intensity_path: ../output/output_gabor/target_gt/cell/ref_int_1light.png
+outdir: ../output/output_reconstruction/original_cell_ref_int_1light
+log_dir_prefix: ../runs/original_cell_ref_int_1light
