@@ -6,7 +6,7 @@ named-field access and basic type coercion for all parameters.
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from pathlib import Path
 import yaml
 
 
@@ -60,8 +60,18 @@ def load_config(path: str = "config/config.yaml") -> HoloConfig:
         KeyError: If a required field is missing from the YAML.
         FileNotFoundError: If the config file does not exist.
     """
-    with open(path, "r") as f:
+    config_path = Path(path).expanduser().resolve()
+
+    with open(config_path, "r") as f:
         raw = yaml.safe_load(f)
+
+    base_dir = config_path.parent
+
+    def _resolve_path(value: str) -> str:
+        candidate = Path(value).expanduser()
+        if candidate.is_absolute():
+            return str(candidate)
+        return str((base_dir / candidate).resolve())
 
     return HoloConfig(
         wavelength=float(raw["wavelength"]),
@@ -73,16 +83,16 @@ def load_config(path: str = "config/config.yaml") -> HoloConfig:
         offset=int(raw["offset"]),
         mode=str(raw["mode"]),
         pad_factor=int(raw["pad_factor"]),
-        amp_path=str(raw["amp_path"]),
-        phase_path=str(raw["phase_path"]),
+        amp_path=_resolve_path(str(raw["amp_path"])),
+        phase_path=_resolve_path(str(raw["phase_path"])),
         max_iter=int(raw["max_iter"]),
         tv_weight=float(raw["tv_weight"]),
         ref_weight=float(raw["ref_weight"]),
         noise_std=float(raw["noise_std"]),
         learning_rate=float(raw["learning_rate"]),
         log_interval=int(raw["log_interval"]),
-        target_intensity_path=str(raw["target_intensity_path"]),
-        ref_intensity_path=str(raw["ref_intensity_path"]),
-        outdir=str(raw["outdir"]),
-        log_dir_prefix=str(raw["log_dir_prefix"]),
+        target_intensity_path=_resolve_path(str(raw["target_intensity_path"])),
+        ref_intensity_path=_resolve_path(str(raw["ref_intensity_path"])),
+        outdir=_resolve_path(str(raw["outdir"])),
+        log_dir_prefix=_resolve_path(str(raw["log_dir_prefix"])),
     )

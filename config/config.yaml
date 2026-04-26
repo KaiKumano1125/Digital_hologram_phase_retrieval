@@ -26,7 +26,7 @@ mode: ASM   # 'ASM' | 'fresnel'
 # ---------------------------------------------------------------------------
 pad_factor: 2
 amp_path: ../input/cell/amp_cells_v2.png
-phase_path: ../input/cell/phase_cell.png
+phase_path: ../input/cell/phase_cells_v2.png
 
 # ---------------------------------------------------------------------------
 # Reconstruction (reconstruct.py / ReconstructionLoop)
