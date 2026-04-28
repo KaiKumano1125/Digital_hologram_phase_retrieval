@@ -72,27 +72,33 @@ def evaluate_with_offset(gt_path: str, output_paths: list[str], offset: float = 
 
 
 def _evaluate_phase_npy(npy_path: str, gt_path: str) -> None:
-    """Evaluate phase using histogram matching against GT.
+    """Evaluate phase with global-offset correction (standard for phase retrieval papers).
 
-    Loads the raw complex field (.npy), extracts phase, histogram-matches it
-    to the GT distribution, then computes PSNR/SSIM. This removes global
-    offset/scale differences so the score reflects spatial structure only.
+    Phase retrieval has one inherent ambiguity: a global constant offset.
+    We correct for it by subtracting the median reconstructed phase (background),
+    then compare on a fixed [0, 2pi] range. No other transformation is applied.
     """
     complex_field = np.load(npy_path)
-    phase_rad = np.angle(complex_field)                        # [-pi, pi]
-    recon = np.mod(phase_rad, 2 * np.pi) / (2 * np.pi)        # [0, 1]
+    phase_rad = np.angle(complex_field)                          # [-pi, pi]
+
+    # Correct global phase offset (the one legitimate ambiguity in phase retrieval)
+    global_offset = np.median(phase_rad)
+    phase_corrected = phase_rad - global_offset                  # background -> ~0
+
+    # Clip to [0, 2pi] then normalise — avoids wrap-around artefact on near-zero background noise
+    recon = np.clip(phase_corrected, 0, 2 * np.pi) / (2 * np.pi)
 
     gt = _read_grayscale(gt_path)
     h, w = gt.shape
     if recon.shape != (h, w):
         recon = cv2.resize(recon.astype(np.float32), (w, h)).astype(np.float64)
 
-    matched = match_histograms(recon, gt)
-    psnr = peak_signal_noise_ratio(gt, matched, data_range=1.0)
-    ssim = structural_similarity(gt, matched, data_range=1.0)
+    psnr = peak_signal_noise_ratio(gt, recon, data_range=1.0)
+    ssim = structural_similarity(gt, recon, data_range=1.0)
     print("==========================================")
     print(f"Ground truth: {gt_path}")
-    print(f"{npy_path} [histogram-matched]: PSNR = {psnr:.2f} dB, SSIM = {ssim:.4f}")
+    print(f"Global phase offset corrected: {global_offset:.4f} rad")
+    print(f"{npy_path}: PSNR = {psnr:.2f} dB, SSIM = {ssim:.4f}")
     print("==========================================")
 
 
